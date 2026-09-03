@@ -17,6 +17,7 @@ from trellis.agent.knowledge import reload
 reload()
 
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("ids", nargs="+")
@@ -60,6 +61,7 @@ args = parser.parse_args()
 ids = set(args.ids)
 all_tasks = load_tasks(status=None)
 tasks = [task for task in all_tasks if task["id"] in ids]
+assert_executable_task_selection(tasks)
 ms = build_market_state()
 output_file = ROOT / f"task_results_rerun_{datetime.now().strftime('%H%M')}.json"
 

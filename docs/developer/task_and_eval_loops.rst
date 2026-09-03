@@ -21,6 +21,47 @@ The pricing-task surface is split across:
 execution contexts, market states, method plans, and benchmarkable generated
 modules.
 
+Manifest Completeness Gate
+--------------------------
+
+Task selection is fail-closed at the structural manifest boundary. Before a
+pricing, negative, or framework corpus is loaded, Trellis validates the YAML
+shape, unique task ids, referenced market scenarios and FinancePy bindings,
+and the corpus-specific contract envelopes. The modern corpora are strict at
+that boundary:
+
+- FinancePy rows require a typed supported pricing method, a named product
+  with authored economics, and a finite non-negative percentage tolerance.
+- Extension rows require typed supported pricing methods, a named product
+  with authored economics, and a known validation policy.
+- Negative rows must enumerate either missing fields or exact unsupported
+  capabilities.
+- FpML pricing rows require a source contract, independent native contract,
+  and absolute/relative tolerances; expected blocks require exact blocker ids.
+- Framework rows require a component outcome or an explicit trigger contract.
+
+The retained legacy proof corpus is not silently declared valid. Its
+field-level incompleteness is emitted deterministically and frozen by
+``TASKS_PROOF_LEGACY_BASELINE.yaml``. The baseline stores the count and digest
+of exact issue identities plus a normalized fingerprint of all legacy task
+content. Any semantic edit, repair, regression, or added debt therefore
+requires an intentional reviewed update. A matching baseline means only that
+the reviewed inventory has not moved; it is not evidence that those legacy
+rows are self-contained or priceable.
+
+Run the standalone gate with::
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/validate_task_manifests.py
+
+Use ``--show-legacy`` for the complete migration inventory or ``--json`` for a
+machine-readable report. The ordinary pricing-task loader and the dedicated
+FinancePy benchmark loader run the same preflight. The main task runner and
+specific-id rerunner also reject a selected incomplete or non-pricing legacy
+row before default market construction, payoff synthesis, code generation, or
+LLM access. Product-specific field sufficiency is tightened in the individual
+semantic-contract repair tickets; a structurally valid mapping does not by
+itself prove that every product convention has been authored.
+
 FpML Conformance Tasks
 ----------------------
 
@@ -366,6 +407,7 @@ failure.
 
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
+- ``make gate-task-manifests`` for fail-closed task-contract validation
 - ``make gate-pr`` for PR-ready validation
 - ``make gate-canary`` for the focused live canary subset
 - ``make gate-release`` for the broader replay/drift/freshness release gate
@@ -375,6 +417,8 @@ The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 and cassette freshness) and keeps those in ``make gate-release`` instead. The
 intent is to keep ordinary merge validation centered on core correctness while
 still preserving the broader numerical/reference evidence before releases.
+It includes ``gate-task-manifests`` so structural task-manifest regressions fail
+the local and CI gates before ordinary task commands run.
 
 GitHub Actions now runs that same PR surface as deterministic shards generated
 by ``scripts/pr_gate_shard.py`` plus a separate tier-2 contract job, so PR wall

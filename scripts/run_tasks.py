@@ -27,6 +27,7 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 from trellis.agent.config import get_batch_token_budget, load_env
 from trellis.agent.evals import summarize_task_results
 from trellis.agent.task_manifests import filter_loaded_tasks
+from trellis.agent.task_manifest_validation import assert_executable_task_selection
 from trellis.agent.task_run_store import (
     TASK_RUN_LATEST_INDEX,
     TASK_RUN_LATEST_ROOT,
@@ -150,6 +151,7 @@ def run_block(
     offline_local_agents: bool = False,
 ):
     """Run a block of tasks and save results incrementally."""
+    assert_executable_task_selection(tasks)
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     market_state = build_market_state()

@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from trellis.agent.market_scenarios import load_market_scenario_contracts
+from trellis.agent.task_manifest_validation import assert_valid_task_manifests
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,12 +30,19 @@ PRICING_TASK_CORPORA: tuple[str, ...] = (
     FPML_CONFORMANCE_TASKS_MANIFEST,
 )
 
+ALL_TASK_CORPORA: tuple[str, ...] = (
+    *PRICING_TASK_CORPORA,
+    NEGATIVE_TASKS_MANIFEST,
+    FRAMEWORK_TASKS_MANIFEST,
+)
+
 
 def load_pricing_tasks(
     *,
     root: Path = ROOT,
 ) -> list[dict[str, Any]]:
     """Load the aggregated priceable-task surface across the new corpora."""
+    assert_valid_task_manifests(root=root, manifest_names=PRICING_TASK_CORPORA)
     loaded: list[dict[str, Any]] = []
     for manifest_name in PRICING_TASK_CORPORA:
         loaded.extend(load_task_manifest(manifest_name, root=root))
@@ -43,32 +51,47 @@ def load_pricing_tasks(
 
 def load_negative_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load the clarification / honest-block task corpus."""
+    assert_valid_task_manifests(root=root, manifest_names=(NEGATIVE_TASKS_MANIFEST,))
     return load_task_manifest(NEGATIVE_TASKS_MANIFEST, root=root)
 
 
 def load_fpml_conformance_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load deterministic paired FpML/native conformance tasks."""
 
+    assert_valid_task_manifests(
+        root=root,
+        manifest_names=(FPML_CONFORMANCE_TASKS_MANIFEST,),
+    )
     return load_task_manifest(FPML_CONFORMANCE_TASKS_MANIFEST, root=root)
 
 
 def load_framework_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load framework/meta tasks."""
+    assert_valid_task_manifests(root=root, manifest_names=(FRAMEWORK_TASKS_MANIFEST,))
     return load_task_manifest(FRAMEWORK_TASKS_MANIFEST, root=root)
 
 
 def load_active_task_lookup(*, root: Path = ROOT) -> dict[str, dict[str, Any]]:
     """Load all active task corpora keyed by task id."""
+    active_corpora = (*PRICING_TASK_CORPORA, NEGATIVE_TASKS_MANIFEST)
+    assert_valid_task_manifests(root=root, manifest_names=active_corpora)
     task_lookup: dict[str, dict[str, Any]] = {}
-    for task in load_pricing_tasks(root=root):
-        task_id = str(task.get("id") or "").strip()
-        if task_id:
-            task_lookup[task_id] = dict(task)
-    for task in load_negative_tasks(root=root):
-        task_id = str(task.get("id") or "").strip()
-        if task_id:
-            task_lookup[task_id] = dict(task)
+    for manifest_name in active_corpora:
+        for task in load_task_manifest(manifest_name, root=root):
+            task_id = str(task.get("id") or "").strip()
+            if task_id:
+                task_lookup[task_id] = dict(task)
     return task_lookup
+
+
+def load_validated_task_manifest(
+    manifest_name: str,
+    *,
+    root: Path = ROOT,
+) -> list[dict[str, Any]]:
+    """Validate and load one task manifest through the fail-closed boundary."""
+    assert_valid_task_manifests(root=root, manifest_names=(manifest_name,))
+    return load_task_manifest(manifest_name, root=root)
 
 
 def load_canary_manifest(
@@ -149,9 +172,9 @@ def load_task_manifest(
         if not isinstance(task, Mapping):
             continue
         payload = dict(task)
-        payload.setdefault("task_corpus", corpus_name)
-        payload.setdefault("task_definition_version", version)
-        payload.setdefault("task_definition_manifest", manifest_name)
+        payload["task_corpus"] = corpus_name
+        payload["task_definition_version"] = version
+        payload["task_definition_manifest"] = manifest_name
         payload.setdefault("market", _materialize_market_from_scenario(payload, scenarios))
         normalized.append(payload)
     return normalized

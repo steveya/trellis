@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from trellis.agent.benchmark_pilots import get_pilot, get_pilot_task_ids
-from trellis.agent.task_manifests import load_task_manifest
+from trellis.agent.task_manifests import load_validated_task_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,7 +45,7 @@ def financepy_benchmark_execution_policy(
 
 def load_financepy_benchmark_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load the FinancePy parity corpus."""
-    return load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml", root=root)
+    return load_validated_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml", root=root)
 
 
 def select_financepy_benchmark_tasks(
