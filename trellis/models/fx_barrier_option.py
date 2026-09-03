@@ -230,13 +230,16 @@ def price_fx_barrier_option_monte_carlo_result(
         method="exact",
     )
 
+    observation_steps = _barrier_observation_steps(resolved)
+
     def payoff_fn(paths):
         path_array = raw_np.asarray(paths, dtype=float)
         terminal = path_array[:, -1]
+        observed = path_array[:, observation_steps] if observation_steps else path_array
         if resolved.barrier_type.startswith("down"):
-            touched = raw_np.min(path_array, axis=1) <= resolved.barrier
+            touched = raw_np.min(observed, axis=1) <= resolved.barrier
         else:
-            touched = raw_np.max(path_array, axis=1) >= resolved.barrier
+            touched = raw_np.max(observed, axis=1) >= resolved.barrier
         active = touched if resolved.barrier_type.endswith("_in") else ~touched
         intrinsic = terminal_intrinsic(
             resolved.option_type,
@@ -290,6 +293,33 @@ def _resolve_observations_per_year(
     if maturity <= 0.0:
         return None
     return max(int(round(float(spec.n_steps) / maturity)), 1)
+
+
+def _barrier_observation_steps(resolved: ResolvedFXBarrierInputs) -> tuple[int, ...]:
+    observations_per_year = resolved.observations_per_year
+    if observations_per_year is None or resolved.maturity <= 0.0:
+        return ()
+    observation_count = max(
+        int(round(resolved.maturity * observations_per_year)),
+        1,
+    )
+    return (
+        0,
+        *tuple(
+            sorted(
+                {
+                    max(
+                        1,
+                        min(
+                            resolved.n_steps,
+                            int(round(index * resolved.n_steps / observation_count)),
+                        ),
+                    )
+                    for index in range(1, observation_count + 1)
+                }
+            )
+        ),
+    )
 
 
 def _resolve_foreign_discount_key(market_state: MarketState, requested: str) -> str:
