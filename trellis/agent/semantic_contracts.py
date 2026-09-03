@@ -1776,7 +1776,7 @@ def _normalize_axis_token(value: object) -> str:
 def _infer_option_type(text: str, explicit: str | None = None) -> str:
     """Infer the canonical call/put side when a vanilla option request states it."""
     normalized_explicit = _normalize_axis_token(explicit)
-    if normalized_explicit in {"call", "put"}:
+    if normalized_explicit:
         return normalized_explicit
     lower = f" {str(text or '').lower()} "
     if re.search(r"\bput\b", lower):

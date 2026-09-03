@@ -796,6 +796,20 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
     (
         lambda task: task["benchmark_contract"].__setitem__("monitoring_style", "discrete"),
         lambda task: task["benchmark_contract"].__setitem__("n_steps", 95),
+        lambda task: task["benchmark_contract"].__setitem__("dividend_rate", 0.25),
+        lambda task: task.update(
+            {
+                "expected_outcome": "honest_block",
+                "expected_blocker_ids": ["semantic_product_contract_gap:lookback"],
+                "honest_block_contract": {
+                    "reason": "lookback_missing",
+                    "summary": "Skip the authored pricing proof.",
+                    "packet_type": "semantic_product_contract_gap",
+                    "missing_capabilities": ["lookback"],
+                    "suggested_action": "Block instead of executing.",
+                },
+            }
+        ),
         lambda task: task["cross_validate"].__setitem__("reference_target", "mc_lookback"),
         lambda task: task["cross_validate"].__setitem__("tolerance_pct", 5.0),
         lambda task: task["cross_validate"]["target_contracts"].pop(

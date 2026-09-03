@@ -1246,8 +1246,17 @@ def _validate_legacy_lookback_comparison_contract(
             _text(task.get("market_scenario_id")) == "equity_barrier_smile",
             canonical_market_matches,
             "comparison_regime" not in task,
+            not any(
+                field in task
+                for field in (
+                    "expected_outcome",
+                    "expected_blocker_ids",
+                    "honest_block_contract",
+                )
+            ),
             _text(task.get("validation_policy")) == "invariants_and_cross_method",
             construct_methods == ("monte_carlo", "analytical"),
+            set(contract) == set(expected_contract),
             all(contract.get(key) == value for key, value in expected_contract.items()),
             tuple(internal_targets or ())
             == ("mc_lookback", "conze_viswanathan_analytical"),
