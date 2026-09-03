@@ -2049,8 +2049,8 @@ def make_lookback_option_contract(
     )
     if len(underlier_names) != 1:
         raise ValueError("Lookback option contract requires exactly one underlier.")
-    if not schedule:
-        raise ValueError("Lookback option contract requires an expiry schedule.")
+    if len(schedule) != 1:
+        raise ValueError("Lookback option contract requires exactly one expiry date.")
     resolved_running_extreme = float(running_extreme)
     if not math.isfinite(resolved_running_extreme) or resolved_running_extreme <= 0.0:
         raise ValueError("Lookback option running_extreme must be finite and positive.")

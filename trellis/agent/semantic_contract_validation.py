@@ -1959,6 +1959,9 @@ def _validate_lookback_option_shape(
         state_dependence="path_dependent",
         schedule_dependence=False,
     )
+    observation_schedule = tuple(contract.product.observation_schedule or ())
+    if len(observation_schedule) != 1:
+        errors.append("Lookback option semantics require exactly one expiry date.")
     option_type = str(getattr(contract.product, "option_type", "") or "").strip().lower()
     if option_type not in _ALLOWED_OPTION_TYPES:
         errors.append(
