@@ -6320,29 +6320,49 @@ def _fixed_lookback_monte_carlo_evaluate_body(
         option_type = normalized_option_type(
             getattr(spec, "option_type", "call")
         )
+        np = get_numpy()
+        contract_spot = float(spec.spot)
+        runtime_spot = getattr(market_state, "spot", None)
+        spot = float(contract_spot if runtime_spot is None else runtime_spot)
         strike = float(spec.strike)
         resolved = resolve_scalar_diffusion_market_inputs(
             market_state,
-            spec,
+            replace(spec, spot=spot),
             volatility_coordinate=strike,
         )
-        np = get_numpy()
         notional = float(spec.notional)
-        if not np.isfinite(notional) or not np.isfinite(strike):
-            raise ValueError("lookback notional and strike must be finite")
+        if not all(
+            bool(np.isfinite(value))
+            for value in (contract_spot, spot, strike, notional)
+        ):
+            raise ValueError("lookback scalar contract values must be finite")
+        if contract_spot <= 0.0:
+            raise ValueError("lookback contract spot must be positive")
         if resolved.spot <= 0.0:
             raise ValueError("lookback Monte Carlo requires positive spot")
 
         running_value = getattr(spec, "running_extreme", None)
-        running_extreme = (
-            resolved.spot
+        historical_extreme = (
+            contract_spot
             if running_value is None
             else float(running_value)
         )
-        if not np.isfinite(running_extreme) or running_extreme <= 0.0:
+        if not np.isfinite(historical_extreme) or historical_extreme <= 0.0:
             raise ValueError(
                 "lookback Monte Carlo requires positive finite running_extreme"
             )
+        if option_type == "put":
+            if historical_extreme > contract_spot:
+                raise ValueError(
+                    "lookback running minimum must not exceed contract spot"
+                )
+            running_extreme = min(historical_extreme, resolved.spot)
+        else:
+            if historical_extreme < contract_spot:
+                raise ValueError(
+                    "lookback running maximum must be at least contract spot"
+                )
+            running_extreme = max(historical_extreme, resolved.spot)
 
         def settle(extreme):
             if option_type == "put":

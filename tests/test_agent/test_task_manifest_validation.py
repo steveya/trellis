@@ -804,6 +804,20 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
         lambda task: task["cross_validate"]["target_contracts"][
             "mc_lookback"
         ].__setitem__("spec_overrides", {"n_paths": 2}),
+        lambda task: task.__setitem__(
+            "market",
+            {
+                "scenario_contract": {
+                    "scenario_id": "equity_barrier_smile",
+                    "constructor_kind": "flat",
+                    "black_vol": 0.01,
+                }
+            },
+        ),
+        lambda task: task.__setitem__(
+            "comparison_regime",
+            {"regime_family": "short_rate", "flat_sigma": 0.01},
+        ),
     ),
 )
 def test_legacy_lookback_comparison_rejects_semantic_contract_drift(mutation):

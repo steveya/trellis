@@ -1170,6 +1170,26 @@ def _validate_legacy_lookback_comparison_contract(
     cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
     targets = cross_validate.get("target_contracts")
     targets = targets if isinstance(targets, Mapping) else {}
+    market = task.get("market")
+    canonical_market_matches = market is None
+    if isinstance(market, Mapping):
+        from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+        canonical = load_market_scenario_contracts().get("equity_barrier_smile")
+        if canonical is not None:
+            expected_market = {
+                "source": canonical.source,
+                "as_of": canonical.as_of.isoformat(),
+                **dict(canonical.selected_components),
+                "scenario_contract": canonical.to_payload(),
+                "scenario_digest": canonical.scenario_digest,
+                "scenario_schema_version": canonical.schema_version,
+                "scenario_constructor_kind": canonical.constructor_kind,
+            }
+            benchmark_inputs = canonical.financepy_inputs()
+            if benchmark_inputs:
+                expected_market["benchmark_inputs"] = benchmark_inputs
+            canonical_market_matches = dict(market) == expected_market
 
     expected_contract = {
         "product": "lookback_option",
@@ -1224,6 +1244,8 @@ def _validate_legacy_lookback_comparison_contract(
             _text(task.get("task_disposition")) == "executable_pricing",
             _text(task.get("instrument_type")) == "lookback_option",
             _text(task.get("market_scenario_id")) == "equity_barrier_smile",
+            canonical_market_matches,
+            "comparison_regime" not in task,
             _text(task.get("validation_policy")) == "invariants_and_cross_method",
             construct_methods == ("monte_carlo", "analytical"),
             all(contract.get(key) == value for key, value in expected_contract.items()),

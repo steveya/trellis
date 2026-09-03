@@ -3698,6 +3698,7 @@ def test_generated_lookback_monte_carlo_composition_matches_reference(
     option_type,
     running_extreme,
 ):
+    from dataclasses import replace
     from datetime import date as _date
 
     from trellis.agent.executor import (
@@ -3758,14 +3759,24 @@ def test_generated_lookback_monte_carlo_composition_matches_reference(
     market_state = MarketState(
         as_of=_date(2024, 1, 1),
         settlement=_date(2024, 1, 1),
+        spot=115.0,
         discount=YieldCurve.flat(0.03),
         vol_surface=FlatVol(0.20),
     )
 
     composed_price = float(namespace[schema.class_name](spec).evaluate(market_state))
+    effective_running_extreme = (
+        min(running_extreme, market_state.spot)
+        if option_type == "put"
+        else max(running_extreme, market_state.spot)
+    )
     reference = price_equity_fixed_lookback_option_monte_carlo_result(
         market_state,
-        spec,
+        replace(
+            spec,
+            spot=market_state.spot,
+            running_extreme=effective_running_extreme,
+        ),
     )
 
     assert composed_price == pytest.approx(
