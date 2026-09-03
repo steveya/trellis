@@ -117,6 +117,18 @@ def test_fx_barrier_mc_applies_declared_observation_frequency(monkeypatch):
     assert result.price == pytest.approx(0.0)
 
 
+def test_fx_barrier_mc_rejects_observations_that_collapse_on_grid():
+    spec = FXBarrierOptionSpec.from_spec(
+        _Spec(),
+        observations_per_year=365,
+        n_paths=1,
+        n_steps=252,
+    )
+
+    with pytest.raises(ValueError, match="distinct simulation steps"):
+        price_fx_barrier_option_monte_carlo_result(_market_state(), spec)
+
+
 def test_fx_barrier_in_out_parity_matches_fx_vanilla():
     market_state = _market_state()
     knock_in = FXBarrierOptionSpec.from_spec(_Spec(barrier_type="down_and_in"))

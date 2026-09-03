@@ -2269,6 +2269,7 @@ def test_admitted_european_analytical_adapter_honors_dividend_yield():
                 "MonteCarloPathRequirement(",
                 "StateAwarePayoff(",
                 "terminal_intrinsic(",
+                "if observation_count > resolved.n_steps:",
                 "return_paths=False",
             ),
             (

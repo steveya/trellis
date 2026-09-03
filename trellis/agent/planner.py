@@ -586,7 +586,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
             FieldDef("monitoring", "str", "Monitoring mode; the FX route supports 'discrete'"),
             FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
-            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None uses derived fixed-grid monitoring from n_steps", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
             FieldDef("n_paths", "int", "Number of Monte Carlo paths", "120000"),
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),

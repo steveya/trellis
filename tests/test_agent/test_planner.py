@@ -73,6 +73,9 @@ class TestSpecSchema:
         assert fields["observations_per_year"].default == "None"
         if schema_id.endswith("monte_carlo"):
             assert fields["seed"].default == "42"
+            assert "derived fixed-grid monitoring" in fields[
+                "observations_per_year"
+            ].description
 
     def test_nth_to_default_static_spec_preserves_weight_and_spread_risk_contract(self):
         fields = {

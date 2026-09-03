@@ -160,6 +160,11 @@ Implementation target: monte_carlo."""
                 int(round(resolved.maturity * resolved.observations_per_year)),
                 1,
             )
+            if observation_count > resolved.n_steps:
+                raise ValueError(
+                    "discrete barrier observations must map to distinct simulation steps; "
+                    "increase n_steps or reduce observations_per_year"
+                )
             observation_steps = (
                 0,
                 *tuple(

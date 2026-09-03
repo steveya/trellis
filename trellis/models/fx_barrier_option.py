@@ -303,6 +303,11 @@ def _barrier_observation_steps(resolved: ResolvedFXBarrierInputs) -> tuple[int, 
         int(round(resolved.maturity * observations_per_year)),
         1,
     )
+    if observation_count > resolved.n_steps:
+        raise ValueError(
+            "discrete barrier observations must map to distinct simulation steps; "
+            "increase n_steps or reduce observations_per_year"
+        )
     return (
         0,
         *tuple(
