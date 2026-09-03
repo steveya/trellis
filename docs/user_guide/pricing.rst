@@ -1207,6 +1207,15 @@ row before constructing its default market. A baseline match does not make
 title-only proof rows suitable as pricing requests, and callers should not
 treat their internal benchmark defaults as general product behavior.
 
+Some retained rows are intentionally executable only as certified honest
+blocks. For example, T09 asks for a step-up callable bond without supplying the
+dated coupon schedule, while the checked callable-bond routes currently accept
+one scalar fixed coupon. A T09 replay returns a structured
+``variable_coupon_schedule`` blocker with no price and zero build attempts; it
+does not turn the request into a flat 5% callable bond. Variable-coupon
+callable-bond pricing remains unsupported until both the schedule and the
+reusable cashflow primitive are available.
+
 The execution layer now also exposes that callable structure directly for the
 bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
 can lower an admitted callable-bond ``DynamicContractIR`` into a route-free

@@ -1233,6 +1233,8 @@ def _bootstrap_ranked_observation_basket_description(task: dict) -> str | None:
 
 def _bootstrap_callable_bond_description(task: dict) -> str | None:
     """Return a canonical callable-bond prompt for title-only proof tasks."""
+    if str(task.get("expected_outcome") or "").strip() == "honest_block":
+        return None
     if str(task.get("description") or "").strip():
         return None
 

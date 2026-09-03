@@ -2545,6 +2545,63 @@ def test_p004_callable_collar_blocks_honestly_without_build(monkeypatch, tmp_pat
     ]
 
 
+def test_t09_step_up_callable_bond_blocks_without_flat_coupon_build(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import _effective_task_description, run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T09"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T09 honest block should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Step-up callable bond blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Implement a dated variable coupon schedule.",
+        },
+    )
+
+    assert "5% semi-annual coupon" not in _effective_task_description(task)
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["attempts"] == 0
+    assert "price" not in result
+    blocker = result["blocker_details"]
+    assert blocker["reason"] == "callable_bond_variable_coupon_schedule_missing"
+    assert blocker["blocker_report"]["blockers"] == [
+        {
+            "id": "semantic_product_contract_gap:variable_coupon_schedule",
+            "category": "semantic_product_contract_gap",
+        }
+    ]
+    assert blocker["repair_packet"]["missing_capabilities"] == [
+        "variable_coupon_schedule"
+    ]
+    assert blocker["repair_packet"]["follow_on_issue"] == "QUA-1251"
+
+
 def test_weighted_nth_to_default_extension_declares_pricing_and_cross_method_contracts():
     from trellis.agent.task_manifests import load_task_manifest
 
@@ -4856,6 +4913,23 @@ def test_effective_task_description_bootstraps_title_only_callable_bond_tasks():
     assert "issuer call dates 2028-01-15, 2030-01-15, and 2032-01-15" in description
     assert "5% semi-annual coupon" in description
     assert "Comparison targets: hw_pde_theta (pde_solver), hw_rate_tree (rate_tree)" in description
+
+
+def test_effective_task_description_never_bootstraps_declared_honest_block():
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T09",
+            "title": "Step-up callable bond (varying coupon schedule)",
+            "status": "done",
+            "expected_outcome": "honest_block",
+            "task_disposition": "expected_honest_block",
+            "construct": "lattice",
+        }
+    )
+
+    assert "5% semi-annual coupon" not in description
 
 
 def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeypatch):

@@ -58,9 +58,12 @@ machine-readable report. The ordinary pricing-task loader and the dedicated
 FinancePy benchmark loader run the same preflight. The main task runner and
 specific-id rerunner also reject a selected incomplete or non-pricing legacy
 row before default market construction, payoff synthesis, code generation, or
-LLM access. Product-specific field sufficiency is tightened in the individual
-semantic-contract repair tickets; a structurally valid mapping does not by
-itself prove that every product convention has been authored.
+LLM access. A legacy row may pass this selection boundary only as executable
+pricing, a named proof fixture, or a fully validated
+``expected_honest_block`` contract. Product-specific field sufficiency is
+tightened in the individual semantic-contract repair tickets; a structurally
+valid mapping does not by itself prove that every product convention has been
+authored.
 
 FpML Conformance Tasks
 ----------------------
@@ -146,11 +149,15 @@ Manifest-declared pricing blocks
 
 Ordinary pricing manifests may declare ``expected_outcome: honest_block``
 together with ``expected_blocker_ids`` and an ``honest_block_contract``. The
-runtime turns that data into a certified blocker packet before market
-construction or builder invocation; it does not add a product-id branch. The
-contract records a reason, missing capabilities, repair action, and optional
-follow-on issue. A declaration without concrete blocker ids is not enough to
-skip construction.
+runtime turns that data into a certified blocker packet before task-specific
+market resolution, payoff construction, or builder invocation; it does not
+add a product-id branch. The batch runner may already have constructed its
+shared default market. The contract records a reason, missing capabilities,
+repair action, and optional follow-on issue. A declaration without concrete
+blocker ids is not enough to skip construction. Retained legacy rows
+additionally require ``task_disposition: expected_honest_block``, a
+disposition reason, and a complete repair contract before selection admits
+them. Hold and rewrite dispositions remain non-executable.
 
 The weighted nth-to-default extension task P006 previously used this honest-
 block boundary while QUA-1237 owned the missing contract. It now carries
@@ -820,6 +827,16 @@ log-space PDE transform for rate instruments without specifying the rate
 payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
 decisions are task-runner contracts, not general natural-language parser
 behavior.
+
+``T09`` follows the same fail-closed boundary for a different reason. Its title
+requests a step-up issuer-callable bond but the retained row does not author
+the dated coupon rates or effective dates, and the checked callable-bond
+cashflow routes accept only one scalar fixed coupon. The runtime therefore
+emits the exact ``variable_coupon_schedule`` capability blocker with zero
+builder attempts. The callable-bond title bootstrap is disabled for declared
+honest blocks so it cannot replace the missing schedule with a flat 5% coupon.
+``QUA-1251`` owns the reusable variable-coupon cashflow support and the future
+T09 pricing contract.
 
 For weighted scalar observations, agents now have a compact API-map entry named
 ``scheduled_observation_composition``. The required construction order is:

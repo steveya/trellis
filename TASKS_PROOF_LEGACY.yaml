@@ -201,6 +201,11 @@ tasks:
   status: done
 - id: T09
   title: Step-up callable bond (varying coupon schedule)
+  description: >-
+    This retained proof request requires an issuer-callable bond with a dated
+    step-up coupon schedule. The dated coupon rates and effective dates are not
+    authored, and current Trellis callable-bond routes support only one scalar
+    fixed coupon. Do not substitute a flat coupon.
   construct: lattice
   new_component: time_varying_cashflows_on_tree
   cross_validate:
@@ -210,6 +215,27 @@ tasks:
     external:
     - financepy
   status: done
+  task_disposition: expected_honest_block
+  disposition_reason: >-
+    T09 omits the dated step-up coupon terms and Trellis has no variable-coupon
+    callable-bond cashflow primitive.
+  expected_outcome: honest_block
+  expected_blocker_ids:
+  - semantic_product_contract_gap:variable_coupon_schedule
+  honest_block_contract:
+    reason: callable_bond_variable_coupon_schedule_missing
+    summary: >-
+      T09 requests a step-up callable bond, but the legacy row does not author
+      the dated coupon schedule and Trellis callable-bond routes accept only one
+      scalar fixed coupon. Pricing it as a flat-coupon bond would change the
+      product.
+    packet_type: semantic_product_contract_gap
+    missing_capabilities:
+    - variable_coupon_schedule
+    suggested_action: >-
+      Implement and validate a dated variable-coupon callable-bond cashflow
+      primitive and author the T09 coupon schedule before enabling pricing.
+    follow_on_issue: QUA-1251
 - id: T10
   title: 'Tree convergence study: price oscillation and Richardson extrapolation'
   construct: lattice

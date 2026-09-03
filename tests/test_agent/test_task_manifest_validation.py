@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -13,6 +14,32 @@ def _write_yaml(root: Path, name: str, payload) -> None:
 
 def _codes(report) -> set[str]:
     return {issue.code for issue in report.blocking_issues}
+
+
+def _legacy_expected_block_task(**overrides):
+    task = {
+        "id": "T09",
+        "title": "Step-up callable bond (varying coupon schedule)",
+        "status": "done",
+        "task_definition_manifest": "TASKS_PROOF_LEGACY.yaml",
+        "description": "Do not substitute a flat coupon.",
+        "task_disposition": "expected_honest_block",
+        "disposition_reason": "Variable coupon economics are not supported.",
+        "expected_outcome": "honest_block",
+        "expected_blocker_ids": [
+            "semantic_product_contract_gap:variable_coupon_schedule"
+        ],
+        "honest_block_contract": {
+            "reason": "callable_bond_variable_coupon_schedule_missing",
+            "summary": "A dated step-up coupon schedule is required.",
+            "packet_type": "semantic_product_contract_gap",
+            "missing_capabilities": ["variable_coupon_schedule"],
+            "suggested_action": "Implement the dated coupon schedule primitive.",
+            "follow_on_issue": "QUA-1251",
+        },
+    }
+    task.update(overrides)
+    return task
 
 
 def test_missing_and_malformed_manifests_fail_closed(tmp_path):
@@ -739,6 +766,121 @@ def test_incomplete_selected_legacy_task_stops_before_market_or_build(monkeypatc
         run_tasks.run_block([task], str(tmp_path / "results.json"))
 
     assert calls == []
+
+
+def test_validated_legacy_expected_honest_block_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_legacy_expected_block_task()])
+
+
+def test_run_block_reports_real_t09_as_non_actionable_honest_block(
+    monkeypatch, tmp_path
+):
+    from scripts import run_tasks
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task as runtime_run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T09"
+    )
+    output_path = tmp_path / "t09-results.json"
+
+    monkeypatch.setattr(run_tasks, "build_market_state", lambda: object())
+
+    def run_t09(selected_task, market_state, **kwargs):
+        return runtime_run_task(
+            selected_task,
+            market_state,
+            task_run_storage_root=tmp_path / "task-runs",
+            **kwargs,
+        )
+
+    monkeypatch.setattr(run_tasks, "run_task", run_t09)
+
+    run_tasks.run_block([task], str(output_path))
+
+    summary = json.loads((tmp_path / "t09-results_summary.json").read_text())
+    assert {
+        key: summary["totals"][key]
+        for key in (
+            "successes",
+            "expectation_passes",
+            "honest_blocks",
+            "actionable_failures",
+        )
+    } == {
+        "successes": 0,
+        "expectation_passes": 1,
+        "honest_blocks": 1,
+        "actionable_failures": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("reason", "summary", "packet_type", "missing_capabilities", "suggested_action"),
+)
+def test_legacy_expected_honest_block_requires_complete_contract(missing_field):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = _legacy_expected_block_task()
+    task["honest_block_contract"].pop(missing_field)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.invalid_honest_block" in _codes(exc_info.value.report)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("expected_blocker_ids", ["semantic_product_contract_gap:other"]),
+        ("missing_capabilities", ["other"]),
+        ("follow_on_issue", "QUA-9999"),
+    ],
+)
+def test_t09_expected_block_requires_variable_coupon_repair_contract(field, value):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = _legacy_expected_block_task()
+    if field == "expected_blocker_ids":
+        task[field] = value
+    else:
+        task["honest_block_contract"][field] = value
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.t09_invalid_honest_block" in _codes(exc_info.value.report)
+
+
+@pytest.mark.parametrize("disposition", ("research_hold", "proof_hold", "rewrite_candidate"))
+def test_legacy_hold_dispositions_remain_non_executable(disposition):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = _legacy_expected_block_task(
+        id="T900",
+        task_disposition=disposition,
+        disposition_reason="Retained outside executable pricing.",
+    )
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.non_executable_disposition" in _codes(exc_info.value.report)
 
 
 def test_task_loader_overwrites_manifest_provenance_claims(tmp_path):
