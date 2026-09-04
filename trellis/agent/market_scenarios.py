@@ -379,6 +379,18 @@ def construct_market_state_for_scenario(
     model_parameter_sets = dict(
         getattr(market_state, "model_parameter_sets", None) or {}
     )
+    selected_curve_names = dict(
+        getattr(market_state, "selected_curve_names", None) or {}
+    )
+    for curve_role in (
+        "discount_curve",
+        "forecast_curve",
+        "credit_curve",
+        "fixing_history",
+    ):
+        selected_name = contract.selected_components.get(curve_role)
+        if selected_name:
+            selected_curve_names[curve_role] = selected_name
     spot = market_state.spot
     vol_surface = market_state.vol_surface
 
@@ -540,6 +552,7 @@ def construct_market_state_for_scenario(
             else None
         ),
         model_parameter_sets=model_parameter_sets or None,
+        selected_curve_names=selected_curve_names or None,
         market_provenance=market_provenance,
     )
     return constructed_state, {

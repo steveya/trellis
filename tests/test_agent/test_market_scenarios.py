@@ -135,6 +135,49 @@ def test_construct_market_state_materializes_named_model_parameters_without_glob
     ]
 
 
+@pytest.mark.parametrize(
+    "selected_curve_names",
+    (
+        None,
+        {
+            "discount_curve": "stale_discount",
+            "forecast_curve": "stale_forecast",
+            "credit_curve": "preserved_credit",
+        },
+    ),
+)
+def test_construct_rates_scenario_applies_declared_selected_curve_names(
+    selected_curve_names,
+):
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.core.market_state import MarketState
+
+    contract = load_market_scenario_contracts(root=ROOT)[
+        "usd_rates_smile_physical_bermudan"
+    ]
+    market_state, _ = construct_market_state_for_scenario(
+        contract,
+        MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+            selected_curve_names=selected_curve_names,
+        ),
+    )
+
+    assert market_state.selected_curve_names == {
+        **(
+            {"credit_curve": "preserved_credit"}
+            if selected_curve_names is not None
+            else {}
+        ),
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+
+
 def test_shared_usd_rates_scenario_does_not_implicitly_enable_hull_white():
     from trellis.agent.market_scenarios import (
         construct_market_state_for_scenario,
