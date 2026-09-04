@@ -1394,9 +1394,14 @@ def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
     """Resolve task instrument identity and record where it came from."""
     benchmark_instrument_type = canonical_benchmark_instrument_type(task)
     if benchmark_instrument_type:
+        contract_source = (
+            "task.benchmark_contract"
+            if isinstance(task.get("benchmark_contract"), Mapping)
+            else "task.extension_contract"
+        )
         return InstrumentIdentityResolution(
             instrument_type=benchmark_instrument_type,
-            source="task.benchmark_contract",
+            source=contract_source,
         )
     title = " ".join(
         part for part in (
@@ -1751,6 +1756,9 @@ def task_to_semantic_contract(task: dict):
     from trellis.agent.semantic_contracts import draft_semantic_contract
 
     description = _effective_task_description(task)
+    bridged = _physical_bermudan_extension_semantic_contract(task, description)
+    if bridged is not None:
+        return bridged
     bridged = _proof_legacy_semantic_contract(task, description)
     if bridged is not None:
         return bridged
@@ -1762,6 +1770,74 @@ def task_to_semantic_contract(task: dict):
         )
     except ValueError:
         return None
+
+
+def _physical_bermudan_extension_semantic_contract(
+    task: Mapping[str, Any],
+    description: str,
+):
+    """Build the strict P005 semantic contract directly from authored fields."""
+    extension_contract = task.get("extension_contract")
+    if not isinstance(extension_contract, Mapping):
+        return None
+    product = str(extension_contract.get("product") or "").strip().lower()
+    if product != "physical_bermudan_swaption":
+        return None
+
+    from trellis.agent.semantic_contracts import (
+        make_physical_bermudan_swaption_contract,
+    )
+
+    authored_terms = benchmark_contract_spec_overrides(task, root=ROOT)
+    strict_term_names = (
+        "notional",
+        "fixed_rate",
+        "exercise_dates",
+        "exercise_to_swap_start",
+        "swap_maturity",
+        "payer_receiver",
+        "settlement_type",
+        "currency",
+        "discount_curve_id",
+        "forecast_curve_id",
+        "hull_white_parameter_source",
+        "fixed_frequency",
+        "fixed_day_count",
+        "fixed_calendar_name",
+        "fixed_business_day_adjustment",
+        "fixed_stub_rule",
+        "fixed_roll_convention",
+        "fixed_payment_lag_business_days",
+        "floating_frequency",
+        "floating_day_count",
+        "floating_calendar_name",
+        "floating_business_day_adjustment",
+        "floating_stub_rule",
+        "floating_roll_convention",
+        "floating_fixing_lag_business_days",
+        "floating_reset_lag_business_days",
+        "floating_payment_lag_business_days",
+        "floating_rate_index",
+        "floating_compounding",
+        "floating_gearing",
+        "floating_spread",
+        "model_time_day_count",
+        "model_time_calendar_name",
+        "projection_policy",
+        "lattice_steps",
+        "lattice_date_tolerance_days",
+    )
+    missing = tuple(name for name in strict_term_names if name not in authored_terms)
+    if missing:
+        raise ValueError(
+            "physical_bermudan_swaption extension contract is missing authored "
+            f"fields: {', '.join(missing)}"
+        )
+    return make_physical_bermudan_swaption_contract(
+        description=description,
+        preferred_method="rate_tree",
+        **{name: authored_terms[name] for name in strict_term_names},
+    )
 
 
 def _semantic_contract_instrument_type(semantic_contract) -> str | None:
@@ -2275,8 +2351,17 @@ def run_task(
                     if generation_policy_value is GenerationPolicy.DETERMINISTIC_ALLOWED
                     else None
                 )
+                semantic_composition_result = (
+                    _physical_bermudan_method_composition_result(
+                        semantic_contract,
+                        target,
+                        generation_policy=generation_policy_value,
+                    )
+                )
                 if deterministic_result is not None:
                     result = deterministic_result
+                elif semantic_composition_result is not None:
+                    result = semantic_composition_result
                 elif repair_packet:
                     result = _blocked_result_for_repair_packet(
                         target.target_id,
@@ -2294,19 +2379,22 @@ def run_task(
                     comparison_target_contract=target.contract,
                     generation_policy=generation_policy_value,
                 )
-                result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
-                    build_fn=build_fn,
-                    build_kwargs=build_kwargs,
-                    initial_result=result,
-                    initial_payload=payload,
-                    target_id=target.target_id,
-                    preferred_method=target.preferred_method,
-                    reference_target=target.is_reference,
-                    task_kind="pricing",
-                    instrument_type=instrument_type,
-                    recovery_mode=recovery_mode_value,
-                    comparison_target_contract=target.contract,
-                )
+                if semantic_composition_result is not None:
+                    recovery_record = None
+                else:
+                    result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                        build_fn=build_fn,
+                        build_kwargs=build_kwargs,
+                        initial_result=result,
+                        initial_payload=payload,
+                        target_id=target.target_id,
+                        preferred_method=target.preferred_method,
+                        reference_target=target.is_reference,
+                        task_kind="pricing",
+                        instrument_type=instrument_type,
+                        recovery_mode=recovery_mode_value,
+                        comparison_target_contract=target.contract,
+                    )
                 if recovery_record is not None:
                     result_data.setdefault("recovery_attempts", []).append(recovery_record)
                 live_results[target.target_id] = result
@@ -2481,10 +2569,15 @@ def run_task(
             )
             result_data["failures"] = _aggregate_failures(result_data)
         else:
-            single_declared_target = (
+            single_execution_target = (
                 comparison_targets[0]
                 if len(comparison_targets) == 1
-                and comparison_targets[0].contract.explicit
+                else None
+            )
+            single_declared_target = (
+                single_execution_target
+                if single_execution_target is not None
+                and single_execution_target.contract.explicit
                 else None
             )
             preferred_method = (
@@ -2534,7 +2627,20 @@ def run_task(
                 build_kwargs["preferred_method"] = preferred_method
             if task.get("cross_validate") and comparison_targets:
                 build_kwargs["comparison_target"] = comparison_targets[0].target_id
-            result = build_fn(**build_kwargs)
+            semantic_composition_result = (
+                _physical_bermudan_method_composition_result(
+                    semantic_contract,
+                    single_execution_target,
+                    generation_policy=generation_policy_value,
+                )
+                if single_execution_target is not None
+                else None
+            )
+            result = (
+                semantic_composition_result
+                if semantic_composition_result is not None
+                else build_fn(**build_kwargs)
+            )
             payload = _build_result_payload(
                 result,
                 preferred_method=preferred_method,
@@ -2550,23 +2656,26 @@ def run_task(
                 if comparison_targets
                 else str(task_id)
             )
-            result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
-                build_fn=build_fn,
-                build_kwargs=build_kwargs,
-                initial_result=result,
-                initial_payload=payload,
-                target_id=target_id,
-                preferred_method=preferred_method,
-                reference_target=False,
-                task_kind="pricing",
-                instrument_type=instrument_type,
-                recovery_mode=recovery_mode_value,
-                comparison_target_contract=(
-                    single_declared_target.contract
-                    if single_declared_target is not None
-                    else None
-                ),
-            )
+            if semantic_composition_result is not None:
+                recovery_record = None
+            else:
+                result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                    build_fn=build_fn,
+                    build_kwargs=build_kwargs,
+                    initial_result=result,
+                    initial_payload=payload,
+                    target_id=target_id,
+                    preferred_method=preferred_method,
+                    reference_target=False,
+                    task_kind="pricing",
+                    instrument_type=instrument_type,
+                    recovery_mode=recovery_mode_value,
+                    comparison_target_contract=(
+                        single_declared_target.contract
+                        if single_declared_target is not None
+                        else None
+                    ),
+                )
             if recovery_record is not None:
                 result_data.setdefault("recovery_attempts", []).append(recovery_record)
             if (
@@ -2998,6 +3107,79 @@ def _blocked_result_for_repair_packet(
             "latest_status": "blocked",
         },
     )
+
+
+def _physical_bermudan_method_composition_result(
+    semantic_contract,
+    target: ComparisonBuildTarget,
+    *,
+    generation_policy: str | GenerationPolicy,
+):
+    """Return an exact zero-attempt result for the known strict MC gap."""
+    semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    if semantic_id != "physical_bermudan_swaption":
+        return None
+
+    from trellis.agent.semantic_contracts import (
+        UnsupportedSemanticMethodError,
+        specialize_semantic_contract_for_method,
+    )
+
+    try:
+        specialize_semantic_contract_for_method(
+            semantic_contract,
+            preferred_method=target.preferred_method,
+        )
+    except UnsupportedSemanticMethodError as exc:
+        blocker_details = exc.to_blocker_details()
+        return SimpleNamespace(
+            payoff_cls=None,
+            success=False,
+            attempts=0,
+            failures=[str(exc)],
+            code="",
+            gap_confidence=1.0,
+            knowledge_gaps=["semantic_method_composition_gap"],
+            reflection={
+                "skipped": True,
+                "reason": "semantic_method_composition_gap",
+            },
+            agent_observations=[
+                {
+                    "agent": "task_runtime",
+                    "kind": "semantic_method_composition_gap",
+                    "severity": "error",
+                    "message": str(exc),
+                    "details": {
+                        "target_id": target.target_id,
+                        **blocker_details,
+                    },
+                }
+            ],
+            knowledge_summary={},
+            token_usage_summary={},
+            intra_run_learning={},
+            platform_trace_path=None,
+            platform_request_id=None,
+            analytical_trace_path=None,
+            analytical_trace_text_path=None,
+            audit_record_path=None,
+            generated_artifact=None,
+            generation_evidence={
+                "policy": normalize_generation_policy(generation_policy).value,
+                "artifact_origin": ArtifactOrigin.NONE.value,
+                "agent_synthesis_attempted": False,
+                "agent_synthesis_observed": False,
+            },
+            blocker_details=blocker_details,
+            post_build_tracking={
+                "active_flags": [],
+                "events": [],
+                "latest_phase": "semantic_method_composition_gap",
+                "latest_status": "blocked",
+            },
+        )
+    return None
 
 
 def _description_for_comparison_target(

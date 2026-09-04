@@ -52,7 +52,9 @@ _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
 _CHECKED_ROUTE_HELPER_CALLS = frozenset({
     "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",
 })
-_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
+_DECLARATIVE_PRIMITIVE_ROLES = frozenset(
+    {"contract_spec", "mesh", "model_registry", "topology"}
+)
 
 
 @dataclass(frozen=True)

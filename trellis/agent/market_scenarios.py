@@ -41,6 +41,27 @@ def _string_mapping(payload: Mapping[str, object] | None) -> dict[str, str]:
     }
 
 
+def _model_parameter_set_mapping(payload: object | None) -> dict[str, dict[str, object]]:
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("model_parameter_sets must be a mapping")
+
+    parameter_sets: dict[str, dict[str, object]] = {}
+    for name, parameters in payload.items():
+        if not isinstance(name, str) or not name or name != name.strip():
+            raise ValueError(
+                "model_parameter_sets names must be exact nonblank strings "
+                "without surrounding whitespace"
+            )
+        if not isinstance(parameters, Mapping):
+            raise ValueError(
+                f"model_parameter_sets[{name!r}] must be a parameter mapping"
+            )
+        parameter_sets[name] = dict(parameters)
+    return parameter_sets
+
+
 def _stable_json(payload: Mapping[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -118,6 +139,9 @@ class MarketScenarioContract:
     shifted_black_vol: float | None = None
     shift: float | None = None
     sabr: Mapping[str, float] = field(default_factory=dict)
+    model_parameter_sets: Mapping[str, Mapping[str, object]] = field(
+        default_factory=dict
+    )
     underliers: tuple[ScenarioUnderlier, ...] = ()
     correlation_source: Mapping[str, object] | None = None
     scenario_digest: str = ""
@@ -127,7 +151,7 @@ class MarketScenarioContract:
         return replace(self, scenario_digest=digest)
 
     def _digest_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "scenario_id": self.scenario_id,
             "schema_version": self.schema_version,
             "source": self.source,
@@ -154,6 +178,12 @@ class MarketScenarioContract:
             "underliers": [underlier.to_payload() for underlier in self.underliers],
             "correlation_source": dict(self.correlation_source or {}),
         }
+        if self.model_parameter_sets:
+            payload["model_parameter_sets"] = {
+                name: dict(parameters)
+                for name, parameters in self.model_parameter_sets.items()
+            }
+        return payload
 
     def to_payload(self) -> dict[str, object]:
         payload = self._digest_payload()
@@ -299,6 +329,7 @@ def market_scenario_contract_from_task(
                     "shifted_black_vol": embedded.get("shifted_black_vol"),
                     "shift": embedded.get("shift"),
                     "sabr": dict(embedded.get("sabr") or {}),
+                    "model_parameter_sets": embedded.get("model_parameter_sets"),
                     "underliers": list(embedded.get("underliers") or ()),
                     "correlation_source": dict(embedded.get("correlation_source") or {}),
                 },
@@ -345,6 +376,9 @@ def construct_market_state_for_scenario(
     underlier_spots = dict(getattr(market_state, "underlier_spots", None) or {})
     vol_surfaces = dict(getattr(market_state, "vol_surfaces", None) or {})
     model_parameters = dict(getattr(market_state, "model_parameters", None) or {})
+    model_parameter_sets = dict(
+        getattr(market_state, "model_parameter_sets", None) or {}
+    )
     spot = market_state.spot
     vol_surface = market_state.vol_surface
 
@@ -449,6 +483,14 @@ def construct_market_state_for_scenario(
         if contract.recovery_rate is not None:
             model_parameters["recovery_rate"] = float(contract.recovery_rate)
 
+    if contract.model_parameter_sets:
+        materialized_parameter_sets = {
+            name: dict(parameters)
+            for name, parameters in contract.model_parameter_sets.items()
+        }
+        model_parameter_sets.update(materialized_parameter_sets)
+        applied_inputs["model_parameter_sets"] = sorted(materialized_parameter_sets)
+
     if contract.correlation_source:
         model_parameters["correlation_source"] = dict(contract.correlation_source)
         applied_inputs["correlation_source"] = contract.correlation_source.get("kind") or "explicit"
@@ -476,6 +518,11 @@ def construct_market_state_for_scenario(
     }
     if contract.recovery_rate is not None:
         market_provenance["market_scenario"]["recovery_rate"] = float(contract.recovery_rate)
+    if contract.model_parameter_sets:
+        market_provenance["market_scenario"]["model_parameter_sets"] = {
+            name: dict(parameters)
+            for name, parameters in contract.model_parameter_sets.items()
+        }
 
     constructed_state = replace(
         market_state,
@@ -487,7 +534,12 @@ def construct_market_state_for_scenario(
         fx_rates=fx_rates or None,
         spot=spot,
         underlier_spots=underlier_spots or None,
-        model_parameters=model_parameters or None,
+        model_parameters=(
+            model_parameters
+            if model_parameters or contract.model_parameter_sets
+            else None
+        ),
+        model_parameter_sets=model_parameter_sets or None,
         market_provenance=market_provenance,
     )
     return constructed_state, {
@@ -750,6 +802,11 @@ def _parse_market_scenario_contract(
             for key, value in dict(constructor.get("sabr") or legacy_inputs.get("sabr") or {}).items()
             if str(key).strip()
         },
+        model_parameter_sets=_model_parameter_set_mapping(
+            constructor.get("model_parameter_sets")
+            if constructor
+            else legacy_inputs.get("model_parameter_sets")
+        ),
         underliers=underliers,
         correlation_source=correlation_source,
     )

@@ -1770,6 +1770,7 @@ def test_deterministic_physical_bermudan_swaption_uses_strict_dual_curve_route()
     assert generated is not None
     ast.parse(generated.code)
     assert "resolve_named_hull_white_parameter_set(" in generated.code
+    assert "contract: PhysicalBermudanSwapTailSpec =" in generated.code
     assert "compile_physical_bermudan_swap_tail_spec(" in generated.code
     assert "price_physical_bermudan_swaption_lattice(" in generated.code
     assert "selected_curve_names" in generated.code

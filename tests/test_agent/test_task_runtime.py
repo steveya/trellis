@@ -12,6 +12,59 @@ import pytest
 import yaml
 
 
+def _strict_physical_bermudan_task() -> dict:
+    return {
+        "id": "P005-UNIT",
+        "title": "Strict physical Bermudan swaption",
+        "instrument_type": "physical_bermudan_swaption",
+        "construct": ["rate_tree", "monte_carlo"],
+        "description": "Price the authored physically settled co-terminal swap tails.",
+        "extension_contract": {
+            "product": "physical_bermudan_swaption",
+            "payer_receiver": "payer",
+            "settlement_type": "physical",
+            "currency": "USD",
+            "notional": 1_000_000.0,
+            "fixed_coupon": 0.03,
+            "exercise_dates": ["2025-11-15", "2026-05-15", "2026-11-15"],
+            "exercise_to_swap_start": [
+                ["2025-11-15", "2025-11-19"],
+                ["2026-05-15", "2026-05-19"],
+                ["2026-11-15", "2026-11-18"],
+            ],
+            "maturity_date": "2030-11-15",
+            "discount_curve_id": "usd_ois",
+            "forecast_curve_id": "USD-SOFR-3M",
+            "hull_white_parameter_source": "usd_rates_smile_hw1f",
+            "fixed_frequency": "semi_annual",
+            "fixed_day_count": "30/360",
+            "fixed_calendar_name": "USSettlement",
+            "fixed_business_day_adjustment": "modified_following",
+            "fixed_stub_rule": "short_final",
+            "fixed_roll_convention": "none",
+            "fixed_payment_lag_business_days": 2,
+            "float_frequency": "quarterly",
+            "floating_day_count": "ACT/360",
+            "floating_calendar_name": "USSettlement",
+            "floating_business_day_adjustment": "modified_following",
+            "floating_stub_rule": "short_final",
+            "floating_roll_convention": "none",
+            "floating_fixing_lag_business_days": 2,
+            "floating_reset_lag_business_days": 2,
+            "floating_payment_lag_business_days": 2,
+            "floating_rate_index": "USD-SOFR-3M",
+            "floating_compounding": "simple",
+            "floating_gearing": 1.0,
+            "floating_spread": 0.0,
+            "model_time_day_count": "ACT/365F",
+            "model_time_calendar_name": "USSettlement",
+            "projection_policy": "static_additive_forward_basis",
+            "lattice_steps": 2_195,
+            "lattice_date_tolerance_days": 0,
+        },
+    }
+
+
 def test_run_task_passes_force_rebuild_and_validation():
     """run_task should forward execution mode into the knowledge-aware builder."""
     from trellis.agent.task_runtime import run_task
@@ -4389,18 +4442,229 @@ def test_p005_preserves_bermudan_extension_semantics():
     description = _effective_task_description(task)
     contract = task_to_semantic_contract(task)
 
-    assert "Style: bermudan." in description
-    assert "Exercise dates: 2025-11-15, 2026-05-15, 2026-11-15." in description
+    assert "strict physical Bermudan swaption" in description
+    assert "Exercise/start mapping: 2025-11-15->2025-11-19" in description
+    assert "No analytical, European, Black, or cash-settlement fallback" in description
     assert contract is not None
     summary = semantic_contract_summary(contract)
-    assert summary["semantic_id"] == "rate_style_swaption"
+    assert summary["semantic_id"] == "physical_bermudan_swaption"
     assert summary["product"]["exercise_style"] == "bermudan"
     assert summary["product"]["observation_schedule"] == [
         "2025-11-15",
         "2026-05-15",
         "2026-11-15",
     ]
-    assert summary["methods"]["candidate_methods"] == ["analytical", "rate_tree"]
+    assert summary["methods"]["candidate_methods"] == ["rate_tree"]
+
+
+def test_physical_p005_contract_is_synthesized_directly_from_authored_terms(monkeypatch):
+    from trellis.agent import semantic_contracts
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    monkeypatch.setattr(
+        semantic_contracts,
+        "draft_semantic_contract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("structured physical contract must not be reparsed as prose")
+        ),
+    )
+
+    contract = task_to_semantic_contract(_strict_physical_bermudan_task())
+
+    assert contract.semantic_id == "physical_bermudan_swaption"
+    assert contract.product.term_fields["fixed_rate"] == pytest.approx(0.03)
+    assert contract.product.term_fields["floating_frequency"] == "quarterly"
+    assert contract.product.term_fields["swap_maturity"] == "2030-11-15"
+    assert contract.product.term_fields["exercise_to_swap_start"] == (
+        ("2025-11-15", "2025-11-19"),
+        ("2026-05-15", "2026-05-19"),
+        ("2026-11-15", "2026-11-18"),
+    )
+
+
+def test_physical_p005_contract_fails_closed_when_an_authored_term_is_missing(monkeypatch):
+    from trellis.agent import semantic_contracts
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = _strict_physical_bermudan_task()
+    del task["extension_contract"]["floating_reset_lag_business_days"]
+    monkeypatch.setattr(
+        semantic_contracts,
+        "draft_semantic_contract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("incomplete structured contract must not fall back to NLP")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="floating_reset_lag_business_days"):
+        task_to_semantic_contract(task)
+
+
+def test_physical_bermudan_monte_carlo_has_exact_l53_composition_gap():
+    from trellis.agent.semantic_contracts import (
+        UnsupportedSemanticMethodError,
+        specialize_semantic_contract_for_method,
+    )
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    contract = task_to_semantic_contract(_strict_physical_bermudan_task())
+
+    with pytest.raises(UnsupportedSemanticMethodError) as exc_info:
+        specialize_semantic_contract_for_method(
+            contract,
+            preferred_method="monte_carlo",
+        )
+
+    details = exc_info.value.to_blocker_details()
+    assert details["reason"] == "semantic_method_composition_gap"
+    assert details["semantic_family"] == "physical_bermudan_swaption"
+    assert details["requested_method"] == "monte_carlo"
+    assert details["blocker_codes"] == [
+        "missing_composition_surface:physical_bermudan_swaption:monte_carlo"
+    ]
+
+
+def test_physical_p005_prices_tree_and_blocks_mc_without_build_attempt(
+    monkeypatch,
+    tmp_path,
+):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_runtime import run_task
+
+    class FakePayoff:
+        price = 58_469.10443134816
+
+    class FakeResult:
+        def __init__(self, requested_contract):
+            self.success = True
+            self.attempts = 1
+            self.gap_confidence = 1.0
+            self.knowledge_gaps = []
+            self.payoff_cls = FakePayoff
+            self.failures = []
+            self.reflection = {}
+            self.agent_observations = []
+            self.knowledge_summary = {}
+            self.token_usage_summary = {}
+            self.intra_run_learning = {}
+            self.platform_request_id = "executor_build_physical_bermudan_tree"
+            self.platform_trace_path = None
+            self.analytical_trace_path = None
+            self.analytical_trace_text_path = None
+            self.audit_record_path = None
+            self.blocker_details = None
+            self.post_build_tracking = {}
+            self.generation_evidence = {}
+            self.selected_method = "rate_tree"
+            self.comparison_target_contract = requested_contract
+
+    task = _strict_physical_bermudan_task()
+    task["cross_validate"] = {
+        "internal": [
+            "physical_bermudan_swaption_lattice",
+            "physical_bermudan_swaption_monte_carlo",
+        ],
+        "tolerance_pct": 0.0,
+    }
+    calls: list[str] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs["comparison_target"])
+        return FakeResult(
+            kwargs["request_metadata"]["comparison_target_contract"]
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        payoff_factory=lambda payoff_cls, _schema, _settle: payoff_cls(),
+        price_fn=lambda payoff, _market: payoff.price,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="standalone",
+    )
+
+    assert calls == ["physical_bermudan_swaption_lattice"]
+    tree = result["method_results"]["physical_bermudan_swaption_lattice"]
+    mc = result["method_results"]["physical_bermudan_swaption_monte_carlo"]
+    assert tree["success"] is True
+    assert tree["price"] == pytest.approx(58_469.10443134816)
+    assert mc["success"] is False
+    assert mc["attempts"] == 0
+    assert mc["blocker_details"]["blocker_codes"] == [
+        "missing_composition_surface:physical_bermudan_swaption:monte_carlo"
+    ]
+    assert result["comparison_outputs"] == {
+        "physical_bermudan_swaption_lattice": {
+            "price": pytest.approx(58_469.10443134816),
+        }
+    }
+    assert result["cross_validation"]["status"] == "insufficient_results"
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert classify_task_result(result) == "blocked"
+
+
+def test_single_target_physical_bermudan_mc_blocks_without_build_or_recovery(
+    monkeypatch,
+    tmp_path,
+):
+    from trellis.agent.task_runtime import run_task
+
+    task = _strict_physical_bermudan_task()
+    task["construct"] = ["monte_carlo"]
+    task["cross_validate"] = {
+        "internal": ["physical_bermudan_swaption_monte_carlo"],
+        "target_contracts": {
+            "physical_bermudan_swaption_monte_carlo": {
+                "method": "monte_carlo",
+                "payoff_family": "physical_bermudan_swaption",
+                "exercise_style": "bermudan",
+                "model_family": "interest_rate",
+                "underlying_asset_class": "rate",
+                "observation_style": "exercise_schedule",
+            }
+        },
+    }
+    calls: list[str] = []
+
+    def fail_if_built(**_kwargs):
+        calls.append("build")
+        raise AssertionError("unsupported MC composition must block before build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fail_if_built,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="standalone",
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["attempts"] == 0
+    assert result["expected_honest_block"] is True
+    assert result["blocker_details"]["blocker_codes"] == [
+        "missing_composition_surface:physical_bermudan_swaption:monte_carlo"
+    ]
 
 
 def test_task_to_instrument_type_does_not_misclassify_cdo_or_nth_loss_distribution_titles():

@@ -6943,7 +6943,7 @@ def _deterministic_exact_binding_evaluate_body(
                 raise ValueError(
                     "Physical Bermudan swaption lattice_date_tolerance_days must be a non-negative integer"
                 )
-            contract = compile_physical_bermudan_swap_tail_spec(
+            contract: PhysicalBermudanSwapTailSpec = compile_physical_bermudan_swap_tail_spec(
                 spec,
                 valuation_date=valuation_date,
             )
@@ -8754,6 +8754,7 @@ def _deterministic_exact_binding_import_lines(
         imports.append(
             "from trellis.models.rate_swap_tail import (\n"
             "    NamedRateCurve,\n"
+            "    PhysicalBermudanSwapTailSpec,\n"
             "    compile_physical_bermudan_swap_tail_spec,\n"
             "    price_physical_bermudan_swaption_lattice,\n"
             "    resolve_co_terminal_swap_tails,\n"

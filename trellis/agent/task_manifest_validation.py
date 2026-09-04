@@ -543,6 +543,15 @@ def _validate_extension_task(
                 path,
             )
         )
+    if task_id == "P005":
+        issues.extend(
+            _validate_p005_physical_bermudan_swaption_contract(
+                manifest_name,
+                task,
+                contract if isinstance(contract, Mapping) else {},
+                path,
+            )
+        )
     return issues
 
 
@@ -892,6 +901,175 @@ def _validate_p004_callable_collar_contract(
                 manifest_name,
                 "extension.callable_collar_missing_honest_block",
                 "callable collar must declare the control and continuation dynamic-composition blockers",
+                task_id=task_id,
+                path=path,
+            )
+        )
+    return issues
+
+
+def _validate_p005_physical_bermudan_swaption_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    """Keep P005 on one complete, convention-aware physical swap-tail contract."""
+    task_id = "P005"
+    contract_path = f"{path}.extension_contract"
+    issues: list[TaskManifestIssue] = []
+    expected_contract = {
+        "product": "physical_bermudan_swaption",
+        "payer_receiver": "payer",
+        "settlement_type": "physical",
+        "currency": "USD",
+        "notional": 1_000_000.0,
+        "fixed_coupon": 0.03,
+        "exercise_dates": ["2025-11-15", "2026-05-15", "2026-11-15"],
+        "exercise_to_swap_start": [
+            ["2025-11-15", "2025-11-19"],
+            ["2026-05-15", "2026-05-19"],
+            ["2026-11-15", "2026-11-18"],
+        ],
+        "maturity_date": "2030-11-15",
+        "discount_curve_id": "usd_ois",
+        "forecast_curve_id": "USD-SOFR-3M",
+        "hull_white_parameter_source": "usd_rates_smile_hw1f",
+        "fixed_frequency": "semiannual",
+        "fixed_day_count": "30/360",
+        "fixed_calendar_name": "USSettlement",
+        "fixed_business_day_adjustment": "modified_following",
+        "fixed_stub_rule": "short_final",
+        "fixed_roll_convention": "none",
+        "fixed_payment_lag_business_days": 2,
+        "float_frequency": "quarterly",
+        "floating_day_count": "ACT/360",
+        "floating_calendar_name": "USSettlement",
+        "floating_business_day_adjustment": "modified_following",
+        "floating_stub_rule": "short_final",
+        "floating_roll_convention": "none",
+        "floating_fixing_lag_business_days": 2,
+        "floating_reset_lag_business_days": 2,
+        "floating_payment_lag_business_days": 2,
+        "floating_rate_index": "USD-SOFR-3M",
+        "floating_compounding": "simple",
+        "floating_gearing": 1.0,
+        "floating_spread": 0.0,
+        "model_time_day_count": "ACT/365F",
+        "model_time_calendar_name": "USSettlement",
+        "projection_policy": "static_additive_forward_basis",
+        "lattice_steps": 2_195,
+        "lattice_date_tolerance_days": 0,
+    }
+    required_fields = tuple(expected_contract)
+    for field in required_fields:
+        if field not in contract or not _meaningful_value(contract.get(field)):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.bermudan_swaption_missing_field",
+                    f"P005 physical Bermudan swaption requires authored {field}",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+
+    cross_validate = task.get("cross_validate")
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+    common_target_axes = {
+        "payoff_family": "physical_bermudan_swaption",
+        "exercise_style": "bermudan",
+        "model_family": "interest_rate",
+        "underlying_asset_class": "rate",
+        "observation_style": "exercise_schedule",
+    }
+    expected_targets = {
+        "physical_bermudan_swaption_lattice": {
+            "method": "rate_tree",
+            "route_id": "physical_bermudan_swaption_lattice",
+            "route_family": "physical_bermudan_swaption_lattice",
+            "backend_binding_id": (
+                "trellis.models.rate_swap_tail."
+                "price_physical_bermudan_swaption_lattice"
+            ),
+            **common_target_axes,
+        },
+        "physical_bermudan_swaption_monte_carlo": {
+            "method": "monte_carlo",
+            **common_target_axes,
+        },
+    }
+    internal_targets = cross_validate.get("internal")
+    internal_targets_are_exact = (
+        _nonempty_string_sequence(internal_targets)
+        and tuple(internal_targets) == tuple(expected_targets)
+    )
+    target_contracts_are_exact = (
+        set(targets) == set(expected_targets)
+        and all(
+            isinstance(targets.get(target_id), Mapping)
+            and dict(targets[target_id]) == expected
+            for target_id, expected in expected_targets.items()
+        )
+    )
+    if (
+        set(cross_validate) != {"internal", "tolerance_pct", "target_contracts"}
+        or not internal_targets_are_exact
+        or not target_contracts_are_exact
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.bermudan_swaption_invalid_targets",
+                "P005 requires the exact physical tree binding and a semantic-only Monte Carlo target",
+                task_id=task_id,
+                path=f"{path}.cross_validate",
+            )
+        )
+
+    description = _text(task.get("description")).lower()
+    if "price" not in description or "greek" in description:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.bermudan_swaption_invalid_output_request",
+                "P005 requests price only; the strict physical tree route has no native Greeks",
+                task_id=task_id,
+                path=f"{path}.description",
+            )
+        )
+
+    construct = task.get("construct")
+    construct_methods = (
+        tuple(str(item).strip() for item in construct)
+        if _nonempty_string_sequence(construct)
+        else ()
+    )
+    contract_is_exact = (
+        _text(task.get("market_scenario_id"))
+        == "usd_rates_smile_physical_bermudan"
+        and _text(task.get("instrument_type")) == "physical_bermudan_swaption"
+        and construct_methods == ("rate_tree", "monte_carlo")
+        and set(contract) == set(expected_contract)
+        and all(contract.get(key) == value for key, value in expected_contract.items())
+        and cross_validate.get("tolerance_pct") == 5.0
+        and not any(
+            field in task
+            for field in (
+                "expected_outcome",
+                "expected_blocker_ids",
+                "honest_block_contract",
+            )
+        )
+    )
+    if not contract_is_exact:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.bermudan_swaption_invalid_contract",
+                "P005 requires the bounded physical dual-curve swap-tail contract and 5% comparison tolerance",
                 task_id=task_id,
                 path=path,
             )

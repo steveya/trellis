@@ -52,6 +52,36 @@ def _legacy_lookback_task(task_id: str = "T30"):
     )
 
 
+def _extension_task(task_id: str):
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    return next(task for task in payload["tasks"] if task["id"] == task_id)
+
+
+def _audit_single_extension_task(tmp_path: Path, task):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {
+                str(task["market_scenario_id"]): {"description": "test market"}
+            },
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": 1, "tasks": [task]},
+    )
+    return audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+
 def test_missing_and_malformed_manifests_fail_closed(tmp_path):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 
@@ -482,6 +512,152 @@ def test_callable_collar_exact_values_are_scoped_to_p004(tmp_path):
         for issue in report.blocking_issues
         if issue.code.startswith("extension.callable_collar_")
     }
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    (
+        "exercise_to_swap_start",
+        "maturity_date",
+        "settlement_type",
+        "currency",
+        "discount_curve_id",
+        "forecast_curve_id",
+        "hull_white_parameter_source",
+        "fixed_day_count",
+        "fixed_coupon",
+        "fixed_frequency",
+        "fixed_calendar_name",
+        "fixed_business_day_adjustment",
+        "fixed_stub_rule",
+        "fixed_roll_convention",
+        "fixed_payment_lag_business_days",
+        "float_frequency",
+        "floating_day_count",
+        "floating_calendar_name",
+        "floating_business_day_adjustment",
+        "floating_stub_rule",
+        "floating_roll_convention",
+        "floating_fixing_lag_business_days",
+        "floating_reset_lag_business_days",
+        "floating_payment_lag_business_days",
+        "floating_rate_index",
+        "floating_compounding",
+        "floating_gearing",
+        "floating_spread",
+        "model_time_day_count",
+        "model_time_calendar_name",
+        "projection_policy",
+        "lattice_steps",
+        "lattice_date_tolerance_days",
+    ),
+)
+def test_p005_requires_every_physical_swap_tail_input(tmp_path, missing_field):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    task["extension_contract"].pop(missing_field, None)
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_missing_field" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task.__setitem__("market_scenario_id", "usd_rates_smile"),
+        lambda task: task.__setitem__("instrument_type", "swaption"),
+        lambda task: task.__setitem__("construct", ["lattice", "monte_carlo"]),
+        lambda task: task["extension_contract"].__setitem__("product", "swaption"),
+        lambda task: task["extension_contract"].__setitem__(
+            "discount_curve_id", "USD-OIS"
+        ),
+        lambda task: task["extension_contract"].__setitem__(
+            "exercise_to_swap_start",
+            [
+                ["2025-11-15", "2025-11-15"],
+                ["2026-05-15", "2026-05-19"],
+                ["2026-11-15", "2026-11-18"],
+            ],
+        ),
+        lambda task: task["extension_contract"].__setitem__(
+            "fixed_day_count", "ACT/ACT ICMA"
+        ),
+        lambda task: task["extension_contract"].__setitem__("lattice_steps", 1098),
+        lambda task: task["extension_contract"].__setitem__(
+            "lattice_date_tolerance_days", 1
+        ),
+        lambda task: task["cross_validate"].__setitem__("tolerance_pct", 4.99),
+    ),
+)
+def test_p005_rejects_identity_economic_and_acceptance_drift(tmp_path, mutation):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    mutation(task)
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_invalid_contract" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task["cross_validate"]["target_contracts"][
+            "physical_bermudan_swaption_lattice"
+        ].__setitem__("route_id", "exercise_lattice"),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "physical_bermudan_swaption_lattice"
+        ].__setitem__(
+            "backend_binding_id",
+            "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree",
+        ),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "physical_bermudan_swaption_monte_carlo"
+        ].__setitem__("route_id", "exercise_monte_carlo"),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "physical_bermudan_swaption_monte_carlo"
+        ].__setitem__(
+            "backend_binding_id", "trellis.models.monte_carlo.engine.MonteCarloEngine"
+        ),
+        lambda task: task["cross_validate"].__setitem__(
+            "internal", ["physical_bermudan_swaption_lattice"]
+        ),
+    ),
+)
+def test_p005_rejects_route_fallbacks_and_executable_mc_claims(tmp_path, mutation):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    mutation(task)
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_invalid_targets" in _codes(report)
+
+
+def test_p005_reports_malformed_internal_targets_without_raising(tmp_path):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    task["cross_validate"]["internal"] = 1
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_invalid_targets" in _codes(report)
+
+
+def test_p005_requests_price_without_native_greeks(tmp_path):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    task["description"] += " Return native Greeks."
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_invalid_output_request" in _codes(report)
 
 
 def test_tolerances_accept_exact_zero_and_reject_non_finite_values(tmp_path):

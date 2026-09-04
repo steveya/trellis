@@ -145,7 +145,44 @@ _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
     "cliquet_option": "cliquet_option",
     "variance_swap": "variance_swap",
     "rainbow_option": "basket_option",
+    "physical_bermudan_swaption": "physical_bermudan_swaption",
 }
+
+_PHYSICAL_BERMUDAN_OVERRIDE_ALIASES: tuple[tuple[str, str], ...] = (
+    ("notional", "notional"),
+    ("fixed_coupon", "fixed_rate"),
+    ("payer_receiver", "payer_receiver"),
+    ("settlement_type", "settlement_type"),
+    ("currency", "currency"),
+    ("discount_curve_id", "discount_curve_id"),
+    ("forecast_curve_id", "forecast_curve_id"),
+    ("hull_white_parameter_source", "hull_white_parameter_source"),
+    ("fixed_frequency", "fixed_frequency"),
+    ("fixed_day_count", "fixed_day_count"),
+    ("fixed_calendar_name", "fixed_calendar_name"),
+    ("fixed_business_day_adjustment", "fixed_business_day_adjustment"),
+    ("fixed_stub_rule", "fixed_stub_rule"),
+    ("fixed_roll_convention", "fixed_roll_convention"),
+    ("fixed_payment_lag_business_days", "fixed_payment_lag_business_days"),
+    ("float_frequency", "floating_frequency"),
+    ("floating_day_count", "floating_day_count"),
+    ("floating_calendar_name", "floating_calendar_name"),
+    ("floating_business_day_adjustment", "floating_business_day_adjustment"),
+    ("floating_stub_rule", "floating_stub_rule"),
+    ("floating_roll_convention", "floating_roll_convention"),
+    ("floating_fixing_lag_business_days", "floating_fixing_lag_business_days"),
+    ("floating_reset_lag_business_days", "floating_reset_lag_business_days"),
+    ("floating_payment_lag_business_days", "floating_payment_lag_business_days"),
+    ("floating_rate_index", "floating_rate_index"),
+    ("floating_compounding", "floating_compounding"),
+    ("floating_gearing", "floating_gearing"),
+    ("floating_spread", "floating_spread"),
+    ("model_time_day_count", "model_time_day_count"),
+    ("model_time_calendar_name", "model_time_calendar_name"),
+    ("projection_policy", "projection_policy"),
+    ("lattice_steps", "lattice_steps"),
+    ("lattice_date_tolerance_days", "lattice_date_tolerance_days"),
+)
 
 
 def benchmark_contract(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -170,6 +207,14 @@ def _spec_override_contract(task: Mapping[str, Any]) -> dict[str, Any]:
 def canonical_benchmark_instrument_type(task: Mapping[str, Any]) -> str | None:
     """Return the canonical runtime instrument family for one benchmark-backed task."""
     contract = benchmark_contract(task)
+    if not contract:
+        extension_contract = task.get("extension_contract")
+        if (
+            isinstance(extension_contract, Mapping)
+            and str(extension_contract.get("product") or "").strip().lower()
+            == "physical_bermudan_swaption"
+        ):
+            contract = dict(extension_contract)
     product = str(contract.get("product") or "").strip().lower()
     if product == "period_rate_option_strip":
         cap_floor = str(contract.get("cap_floor") or "").strip().lower()
@@ -333,6 +378,8 @@ def benchmark_spec_overrides(
                 scenario_contract=scenario_contract,
             )
         )
+    elif product == "physical_bermudan_swaption":
+        overrides.update(_physical_bermudan_swaption_overrides(contract))
     elif product == "barrier_option":
         overrides.update(_barrier_option_overrides(contract, valuation_date=valuation_date))
     elif product == "digital_option":
@@ -666,6 +713,8 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
         if style == "bermudan":
             return "Price a Bermudan swaption under the declared benchmark rates surface."
         return "Price a European-style swaption under the declared Black benchmark surface."
+    if product == "physical_bermudan_swaption":
+        return "Price a strict physical Bermudan swaption from convention-complete co-terminal swap tails."
     if product == "barrier_option":
         monitoring = str(contract.get("monitoring") or "").strip().lower()
         if monitoring == "discrete":
@@ -854,6 +903,30 @@ def _benchmark_detail_lines(
             lines.append(f"Fixed day count: {contract['fixed_day_count']}.")
         if scenario_contract is not None and scenario_contract.forecast_curve_name:
             lines.append(f"Rate index: {scenario_contract.forecast_curve_name}.")
+        return lines
+    if product == "physical_bermudan_swaption":
+        mapping = contract.get("exercise_to_swap_start") or ()
+        mapping_text = ", ".join(
+            f"{pair[0]}->{pair[1]}"
+            for pair in mapping
+            if isinstance(pair, (list, tuple)) and len(pair) == 2
+        )
+        lines.extend(
+            [
+                f"Payer/receiver: {contract.get('payer_receiver')}.",
+                f"Settlement type: {contract.get('settlement_type')}.",
+                f"Fixed coupon: {contract.get('fixed_coupon')}.",
+                f"Notional: {contract.get('notional')} {contract.get('currency')}.",
+                f"Exercise/start mapping: {mapping_text}.",
+                f"Co-terminal swap maturity: {contract.get('maturity_date')}.",
+                f"Named curves: discount={contract.get('discount_curve_id')}, forecast={contract.get('forecast_curve_id')}.",
+                f"Named Hull-White parameters: {contract.get('hull_white_parameter_source')}.",
+                f"Fixed leg: {contract.get('fixed_frequency')} {contract.get('fixed_day_count')}.",
+                f"Floating leg: {contract.get('float_frequency')} {contract.get('floating_day_count')} {contract.get('floating_compounding')}.",
+                f"Lattice controls: steps={contract.get('lattice_steps')}, date tolerance={contract.get('lattice_date_tolerance_days')} days.",
+                "No analytical, European, Black, or cash-settlement fallback is permitted.",
+            ]
+        )
         return lines
     if product == "barrier_option":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
@@ -1098,6 +1171,77 @@ def _swaption_overrides(
         ),
         "is_payer": payer_receiver == "payer",
     }
+
+
+def _physical_bermudan_swaption_overrides(
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the authored P005 contract onto the strict swap-tail schema.
+
+    This path intentionally provides no convention or market defaults.  The
+    legacy task vocabulary is translated only through the three explicit
+    aliases in the contract (`fixed_coupon`, `float_frequency`, and
+    `maturity_date`).
+    """
+    overrides: dict[str, Any] = {}
+    missing: list[str] = []
+    for source_key, target_key in _PHYSICAL_BERMUDAN_OVERRIDE_ALIASES:
+        value = contract.get(source_key)
+        if value is None or value == "":
+            missing.append(source_key)
+            continue
+        overrides[target_key] = value
+
+    raw_exercise_dates = contract.get("exercise_dates")
+    exercise_dates: list[date] = []
+    if isinstance(raw_exercise_dates, (list, tuple)):
+        for index, value in enumerate(raw_exercise_dates):
+            parsed = _parse_date(value)
+            if parsed is None:
+                raise ValueError(
+                    "physical_bermudan_swaption "
+                    f"exercise_dates[{index}] must be an ISO date"
+                )
+            exercise_dates.append(parsed)
+    if not exercise_dates:
+        missing.append("exercise_dates")
+    else:
+        overrides["exercise_dates"] = tuple(exercise_dates)
+
+    maturity = _parse_date(contract.get("maturity_date"))
+    if maturity is None:
+        missing.append("maturity_date")
+    else:
+        overrides["swap_maturity"] = maturity
+
+    raw_mapping = contract.get("exercise_to_swap_start")
+    normalized_mapping: list[tuple[date, date]] = []
+    if isinstance(raw_mapping, (list, tuple)):
+        for index, pair in enumerate(raw_mapping):
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                raise ValueError(
+                    "physical_bermudan_swaption exercise_to_swap_start must "
+                    f"contain two-date pairs; invalid item at index {index}"
+                )
+            exercise_date = _parse_date(pair[0])
+            swap_start = _parse_date(pair[1])
+            if exercise_date is None or swap_start is None:
+                raise ValueError(
+                    "physical_bermudan_swaption exercise_to_swap_start must "
+                    f"contain ISO dates; invalid item at index {index}"
+                )
+            normalized_mapping.append((exercise_date, swap_start))
+    if not normalized_mapping:
+        missing.append("exercise_to_swap_start")
+    else:
+        overrides["exercise_to_swap_start"] = tuple(normalized_mapping)
+
+    if missing:
+        raise ValueError(
+            "physical_bermudan_swaption requires authored fields: "
+            + ", ".join(dict.fromkeys(missing))
+        )
+    return overrides
 
 
 def _barrier_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:

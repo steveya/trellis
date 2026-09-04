@@ -40,6 +40,58 @@ def _legacy_tasks() -> dict[str, dict]:
     }
 
 
+def _physical_bermudan_task() -> dict:
+    return {
+        "id": "P005-UNIT",
+        "title": "Strict physical Bermudan swaption",
+        "instrument_type": "physical_bermudan_swaption",
+        "construct": ["rate_tree", "monte_carlo"],
+        "extension_contract": {
+            "product": "physical_bermudan_swaption",
+            "payer_receiver": "payer",
+            "settlement_type": "physical",
+            "currency": "USD",
+            "notional": 1_000_000.0,
+            "fixed_coupon": 0.03,
+            "exercise_dates": ["2025-11-15", "2026-05-15", "2026-11-15"],
+            "exercise_to_swap_start": [
+                ["2025-11-15", "2025-11-19"],
+                ["2026-05-15", "2026-05-19"],
+                ["2026-11-15", "2026-11-18"],
+            ],
+            "maturity_date": "2030-11-15",
+            "discount_curve_id": "usd_ois",
+            "forecast_curve_id": "USD-SOFR-3M",
+            "hull_white_parameter_source": "usd_rates_smile_hw1f",
+            "fixed_frequency": "semi_annual",
+            "fixed_day_count": "30/360",
+            "fixed_calendar_name": "USSettlement",
+            "fixed_business_day_adjustment": "modified_following",
+            "fixed_stub_rule": "short_final",
+            "fixed_roll_convention": "none",
+            "fixed_payment_lag_business_days": 2,
+            "float_frequency": "quarterly",
+            "floating_day_count": "ACT/360",
+            "floating_calendar_name": "USSettlement",
+            "floating_business_day_adjustment": "modified_following",
+            "floating_stub_rule": "short_final",
+            "floating_roll_convention": "none",
+            "floating_fixing_lag_business_days": 2,
+            "floating_reset_lag_business_days": 2,
+            "floating_payment_lag_business_days": 2,
+            "floating_rate_index": "USD-SOFR-3M",
+            "floating_compounding": "simple",
+            "floating_gearing": 1.0,
+            "floating_spread": 0.0,
+            "model_time_day_count": "ACT/365F",
+            "model_time_calendar_name": "USSettlement",
+            "projection_policy": "static_additive_forward_basis",
+            "lattice_steps": 2_195,
+            "lattice_date_tolerance_days": 0,
+        },
+    }
+
+
 def test_canonical_benchmark_instrument_type_maps_broad_runtime_families():
     tasks = _benchmark_tasks()
 
@@ -62,6 +114,57 @@ def test_canonical_benchmark_instrument_type_supports_period_rate_option_strip_p
     }
 
     assert canonical_benchmark_instrument_type(task) == "period_rate_option_strip"
+
+
+def test_physical_bermudan_extension_contract_maps_to_strict_runtime_identity():
+    task = _physical_bermudan_task()
+
+    assert canonical_benchmark_instrument_type(task) == "physical_bermudan_swaption"
+
+    description = benchmark_request_description(task, root=ROOT)
+    assert description is not None
+    assert "strict physical Bermudan swaption" in description
+    assert "Exercise/start mapping: 2025-11-15->2025-11-19" in description
+    assert "No analytical, European, Black, or cash-settlement fallback" in description
+
+
+def test_physical_bermudan_spec_overrides_preserve_every_authored_term_and_alias():
+    overrides = benchmark_spec_overrides(_physical_bermudan_task(), root=ROOT)
+
+    assert overrides["fixed_rate"] == pytest.approx(0.03)
+    assert overrides["floating_frequency"] == "quarterly"
+    assert overrides["swap_maturity"] == date(2030, 11, 15)
+    assert overrides["exercise_dates"] == (
+        date(2025, 11, 15),
+        date(2026, 5, 15),
+        date(2026, 11, 15),
+    )
+    assert overrides["exercise_to_swap_start"] == (
+        (date(2025, 11, 15), date(2025, 11, 19)),
+        (date(2026, 5, 15), date(2026, 5, 19)),
+        (date(2026, 11, 15), date(2026, 11, 18)),
+    )
+    assert overrides["settlement_type"] == "physical"
+    assert overrides["discount_curve_id"] == "usd_ois"
+    assert overrides["forecast_curve_id"] == "USD-SOFR-3M"
+    assert overrides["hull_white_parameter_source"] == "usd_rates_smile_hw1f"
+    assert overrides["fixed_payment_lag_business_days"] == 2
+    assert overrides["floating_fixing_lag_business_days"] == 2
+    assert overrides["floating_reset_lag_business_days"] == 2
+    assert overrides["floating_payment_lag_business_days"] == 2
+    assert overrides["lattice_steps"] == 2_195
+    assert overrides["lattice_date_tolerance_days"] == 0
+
+
+def test_physical_bermudan_spec_overrides_reject_any_malformed_exercise_date():
+    task = _physical_bermudan_task()
+    task["extension_contract"]["exercise_dates"][-1] = "not-an-iso-date"
+    task["extension_contract"]["exercise_to_swap_start"] = task[
+        "extension_contract"
+    ]["exercise_to_swap_start"][:2]
+
+    with pytest.raises(ValueError, match=r"exercise_dates\[2\].*ISO"):
+        benchmark_spec_overrides(task, root=ROOT)
 
 
 def test_benchmark_preferred_method_uses_single_declared_construct():
@@ -219,15 +322,16 @@ def test_extension_request_description_surfaces_bermudan_swaption_contract():
     description = benchmark_request_description(tasks["P005"], root=ROOT)
 
     assert description is not None
-    assert "Price a Bermudan swaption" in description
-    assert "Style: bermudan." in description
+    assert "Price a strict physical Bermudan swaption" in description
     assert (
-        "Exercise dates: 2025-11-15, 2026-05-15, 2026-11-15."
+        "Exercise/start mapping: 2025-11-15->2025-11-19, "
+        "2026-05-15->2026-05-19, 2026-11-15->2026-11-18."
         in description
     )
-    assert "Maturity date: 2030-11-15." in description
-    assert "Fixed frequency: semi_annual." in description
-    assert "Floating frequency: quarterly." in description
+    assert "Co-terminal swap maturity: 2030-11-15." in description
+    assert "Fixed leg: semiannual 30/360." in description
+    assert "Floating leg: quarterly ACT/360 simple." in description
+    assert "No analytical, European, Black, or cash-settlement fallback" in description
 
 
 def test_extension_rainbow_overrides_keep_expiry_after_final_exercise_date():

@@ -1020,6 +1020,27 @@ class UnsupportedSemanticMethodError(ValueError):
 _SEMANTIC_METHOD_COMPOSITION_GAPS = MappingProxyType(
     {
         (
+            "physical_bermudan_swaption",
+            "monte_carlo",
+        ): SemanticMethodCompositionGap(
+            summary=(
+                "Physical Bermudan swaption Monte Carlo requires an admitted "
+                "composition from convention-complete co-terminal swap tails "
+                "into pathwise physical exercise valuation."
+            ),
+            available_capabilities=(
+                "convention_complete_co_terminal_swap_tails",
+                "dual_curve_projection",
+                "named_hull_white_parameters",
+                "physical_bermudan_swaption_lattice",
+            ),
+            missing_capabilities=(
+                "physical_swap_tail_path_projection",
+                "pathwise_numeraire_discounting",
+                "swap_value_paths_to_early_exercise_control",
+            ),
+        ),
+        (
             "rate_style_swaption:bermudan",
             "monte_carlo",
         ): SemanticMethodCompositionGap(
