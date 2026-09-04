@@ -1225,6 +1225,15 @@ row before constructing its default market. A baseline match does not make
 title-only proof rows suitable as pricing requests, and callers should not
 treat their internal benchmark defaults as general product behavior.
 
+A resolved library limitation does not make an old title-only task priceable.
+For example, Trellis now has trinomial lattices, interpolation-aware key-rate
+duration mechanics, and a bond YTM solver, but legacy T03, T83, and T85 still
+lack the authored experiment or bond contracts needed for reproducible
+results. They are declared as research, proof, and rewrite holds with explicit
+``missing_inputs`` and are rejected before default market construction or
+pricing. To reactivate one, author those inputs and an acceptance contract in
+a reviewed pricing or proof manifest; do not rely on the title to supply them.
+
 Some retained rows are intentionally executable only as certified honest
 blocks. For example, T09 asks for a step-up callable bond without supplying the
 dated coupon schedule, while the checked callable-bond routes currently accept

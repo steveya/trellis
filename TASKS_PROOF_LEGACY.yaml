@@ -127,7 +127,19 @@ tasks:
     - trinomial_tree
     external:
     - quantlib
-  blocked_by: L1
+  task_disposition: research_hold
+  disposition_reason: >-
+    This is a numerical-method research request, not a priceable trade or a
+    reproducible convergence experiment. It does not author the market,
+    short-rate model, tree grid, convergence measure, or acceptance threshold.
+  missing_inputs:
+  - experiment_specification
+  - valuation_date
+  - discount_curve
+  - short_rate_model_parameters
+  - tree_grid
+  - convergence_metric
+  - acceptance_tolerance
   status: blocked
 - id: T04
   title: Bermudan swaption on HW tree
@@ -1470,7 +1482,19 @@ tasks:
     - smart_krd
     - naive_krd
     analytical: krd_sum_equals_duration
-  blocked_by: L2
+  task_disposition: proof_hold
+  disposition_reason: >-
+    Interpolation-aware curve bumping exists, but this proof row does not
+    author the bond, settlement, discount curve, KRD grid, bump policy, or
+    numerical acceptance contract needed for a reproducible risk result.
+  missing_inputs:
+  - bond_cashflows
+  - settlement
+  - discount_curve
+  - krd_bucket_grid
+  - bump_size
+  - interpolation_policy
+  - acceptance_tolerance
   status: blocked
 - id: T84
   title: 'Scenario analysis: parallel + twist + butterfly'
@@ -1498,7 +1522,20 @@ tasks:
     external:
     - quantlib
     - financepy
-  blocked_by: L9
+  task_disposition: rewrite_candidate
+  disposition_reason: >-
+    Yield-to-maturity solving exists, but this title-only row does not define
+    bond cashflows, settlement and price basis, accrued-interest treatment, or
+    the compounding, frequency, and day-count conventions required to compare
+    solvers or external references.
+  missing_inputs:
+  - bond_cashflows
+  - settlement
+  - dirty_or_clean_price
+  - accrued_interest_convention
+  - yield_compounding_convention
+  - yield_frequency
+  - day_count_convention
   status: blocked
 - id: T86
   title: Theta (time decay) for options via tree and PDE

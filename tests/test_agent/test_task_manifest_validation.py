@@ -1024,6 +1024,175 @@ def test_legacy_hold_dispositions_remain_non_executable(disposition):
     assert "legacy.non_executable_disposition" in _codes(exc_info.value.report)
 
 
+def test_t03_t83_t85_declare_current_nonpricing_contracts():
+    from trellis.agent.task_manifests import load_task_manifest
+
+    expected = {
+        "T03": (
+            "research_hold",
+            {
+                "experiment_specification",
+                "valuation_date",
+                "discount_curve",
+                "short_rate_model_parameters",
+                "tree_grid",
+                "convergence_metric",
+                "acceptance_tolerance",
+            },
+        ),
+        "T83": (
+            "proof_hold",
+            {
+                "bond_cashflows",
+                "settlement",
+                "discount_curve",
+                "krd_bucket_grid",
+                "bump_size",
+                "interpolation_policy",
+                "acceptance_tolerance",
+            },
+        ),
+        "T85": (
+            "rewrite_candidate",
+            {
+                "bond_cashflows",
+                "settlement",
+                "dirty_or_clean_price",
+                "accrued_interest_convention",
+                "yield_compounding_convention",
+                "yield_frequency",
+                "day_count_convention",
+            },
+        ),
+    }
+    loaded_tasks = load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+    tasks = {
+        task["id"]: task
+        for task in loaded_tasks
+        if task["id"] in expected
+    }
+
+    assert not [task["id"] for task in loaded_tasks if task.get("blocked_by")]
+    assert set(tasks) == set(expected)
+    for task_id, (disposition, missing_inputs) in expected.items():
+        task = tasks[task_id]
+        assert task["task_disposition"] == disposition
+        assert set(task["missing_inputs"]) == missing_inputs
+        assert task["disposition_reason"].strip()
+        assert "blocked_by" not in task
+        assert task["status"] == "blocked"
+
+
+def test_real_t03_t83_t85_holds_stop_before_market_or_build(monkeypatch, tmp_path):
+    from scripts import run_tasks
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+    from trellis.agent.task_manifests import load_task_manifest
+
+    tasks = [
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T03", "T83", "T85"}
+    ]
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        run_tasks,
+        "build_market_state",
+        lambda: calls.append("market"),
+    )
+    monkeypatch.setattr(
+        run_tasks,
+        "run_task",
+        lambda *args, **kwargs: calls.append("build"),
+    )
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        run_tasks.run_block(tasks, str(tmp_path / "results.json"))
+
+    issues = exc_info.value.report.blocking_issues
+    assert {issue.code for issue in issues} == {"legacy.non_executable_disposition"}
+    assert {issue.task_id for issue in issues} == {"T03", "T83", "T85"}
+    assert calls == []
+
+
+@pytest.mark.parametrize("task_id", ("T03", "T83", "T85"))
+def test_shared_task_runtime_rejects_governed_holds_before_build(task_id):
+    from trellis.agent import task_runtime
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+    from trellis.agent.task_manifests import load_task_manifest
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+    calls: list[str] = []
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        task_runtime.run_task(
+            task,
+            object(),
+            build_fn=lambda *args, **kwargs: calls.append("build"),
+        )
+
+    issues = exc_info.value.report.blocking_issues
+    assert {issue.code for issue in issues} == {"legacy.non_executable_disposition"}
+    assert {issue.task_id for issue in issues} == {task_id}
+    assert calls == []
+
+
+def test_analytical_stress_defaults_exclude_governed_nonpricing_tasks():
+    from scripts.run_analytical_pricing_stress_set import (
+        ANALYTICAL_PRICING_STRESS_TASK_IDS,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    held_task_ids = {
+        task["id"]
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task.get("task_disposition")
+        in {"research_hold", "proof_hold", "rewrite_candidate"}
+    }
+
+    assert held_task_ids.isdisjoint(ANALYTICAL_PRICING_STRESS_TASK_IDS)
+
+
+def test_analytical_stress_explicit_holds_stop_before_market_or_build(
+    monkeypatch,
+    tmp_path,
+):
+    from scripts import run_analytical_pricing_stress_set as stress_runner
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        stress_runner,
+        "build_market_state",
+        lambda: calls.append("market"),
+    )
+    monkeypatch.setattr(
+        stress_runner,
+        "run_task",
+        lambda *args, **kwargs: calls.append("build"),
+    )
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        stress_runner.run_analytical_pricing_stress_set(
+            model="test-model",
+            validation="standard",
+            force_rebuild=False,
+            task_ids=["T03", "T83", "T85"],
+            output_file=tmp_path / "results.json",
+            report_json_file=tmp_path / "report.json",
+            report_md_file=tmp_path / "report.md",
+        )
+
+    issues = exc_info.value.report.blocking_issues
+    assert {issue.code for issue in issues} == {"legacy.non_executable_disposition"}
+    assert {issue.task_id for issue in issues} == {"T03", "T83", "T85"}
+    assert calls == []
+
+
 def test_task_loader_overwrites_manifest_provenance_claims(tmp_path):
     from trellis.agent.task_manifests import load_task_manifest
 
