@@ -836,6 +836,19 @@ fit the authored tolerance.  The route never converts a Black quote into
 Hull-White volatility and never substitutes the legacy Bermudan helper or a
 European Black lower bound.
 
+The extension task ``P005`` demonstrates the user-visible partial-result
+contract.  Its isolated ``usd_rates_smile_physical_bermudan`` scenario keeps
+the mock calibrated-source Hull-White fixture from changing unrelated users of
+the shared rates scenario.  For its exact authored scenario and conventions,
+the lattice lane returns approximately ``58,469.1044``.  The requested Monte Carlo
+comparison is currently unsupported and is rejected before any generation
+attempt with
+``missing_composition_surface:physical_bermudan_swaption:monte_carlo``.  The
+task therefore reports an expected honest block and insufficient comparison
+results while still returning the successful lattice price.  A caller may use
+that price only as the result of the supported lattice lane; it must not call
+the task cross-validated or infer that a Monte Carlo implementation exists.
+
 European zero-coupon-bond options follow the same policy. The analytical lane
 resolves the shared discount-bond claim, constructs the raw Jamshidian input,
 and applies option direction and notional outside

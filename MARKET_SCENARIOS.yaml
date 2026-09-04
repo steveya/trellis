@@ -104,6 +104,37 @@ scenarios:
         rho: -0.2
         nu: 0.35
 
+  usd_rates_smile_physical_bermudan:
+    source: mock
+    as_of: "2024-11-15"
+    description: P005-only USD OIS + SOFR curves, rates smile, and a mock calibrated-source Hull-White parameter fixture.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: USD-SOFR-3M
+      vol_surface: usd_rates_smile
+    constructor:
+      kind: flat_rates
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.04
+      forecast_rate: 0.0425
+      forecast_curve_name: USD-SOFR-3M
+      black_vol: 0.2
+      shifted_black_vol: 0.19
+      shift: 0.01
+      sabr:
+        alpha: 0.025
+        beta: 0.5
+        rho: -0.2
+        nu: 0.35
+      model_parameter_sets:
+        usd_rates_smile_hw1f:
+          parameter_set_name: usd_rates_smile_hw1f
+          model_family: hull_white
+          mean_reversion: 0.05
+          sigma: 0.01
+          source_kind: calibrated
+          calibration_source: usd_rates_smile_mock_calibration_v1
+
   usd_credit_ig:
     source: mock
     as_of: "2024-11-15"

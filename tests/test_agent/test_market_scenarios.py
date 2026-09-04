@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
+
+import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +22,218 @@ def test_load_market_scenario_contracts_exposes_schema_v2_and_digest():
     assert contract.scenario_digest
     assert contract.financepy_inputs()["stock_price"] == 100.0
     assert contract.financepy_inputs()["domestic_rate"] == 0.05
+
+
+def test_p005_usd_rates_scenario_isolates_named_hull_white_parameters():
+    from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+    contracts = load_market_scenario_contracts(root=ROOT)
+    shared_contract = contracts["usd_rates_smile"]
+    contract = contracts["usd_rates_smile_physical_bermudan"]
+
+    assert shared_contract.model_parameter_sets == {}
+    assert contract.model_parameter_sets == {
+        "usd_rates_smile_hw1f": {
+            "parameter_set_name": "usd_rates_smile_hw1f",
+            "model_family": "hull_white",
+            "mean_reversion": 0.05,
+            "sigma": 0.01,
+            "source_kind": "calibrated",
+            "calibration_source": "usd_rates_smile_mock_calibration_v1",
+        }
+    }
+    assert contract.selected_components == shared_contract.selected_components
+    assert contract.domestic_rate == shared_contract.domestic_rate
+    assert contract.forecast_rate == shared_contract.forecast_rate
+    assert contract.forecast_curve_name == shared_contract.forecast_curve_name
+    assert contract.black_vol == shared_contract.black_vol
+    assert contract.shifted_black_vol == shared_contract.shifted_black_vol
+    assert contract.shift == shared_contract.shift
+    assert contract.sabr == shared_contract.sabr
+    assert "model_parameters" not in contract.selected_components
+    assert contract.to_payload()["model_parameter_sets"] == contract.model_parameter_sets
+    assert (
+        replace(contract, model_parameter_sets={}).with_digest().scenario_digest
+        != contract.scenario_digest
+    )
+
+
+def test_embedded_market_scenario_round_trip_preserves_named_model_parameter_sets():
+    from trellis.agent.market_scenarios import (
+        load_market_scenario_contracts,
+        market_scenario_contract_from_task,
+    )
+
+    original = load_market_scenario_contracts(root=ROOT)[
+        "usd_rates_smile_physical_bermudan"
+    ]
+    reconstructed = market_scenario_contract_from_task(
+        {
+            "market_scenario_id": original.scenario_id,
+            "market": original.to_market_spec(),
+        }
+    )
+
+    assert reconstructed is not None
+    assert reconstructed.scenario_digest == original.scenario_digest
+    assert reconstructed.model_parameter_sets == original.model_parameter_sets
+
+
+def test_construct_market_state_materializes_named_model_parameters_without_global_selection():
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.core.market_state import MarketState
+
+    contract = load_market_scenario_contracts(root=ROOT)[
+        "usd_rates_smile_physical_bermudan"
+    ]
+    pack_only_contract = replace(
+        contract,
+        shifted_black_vol=None,
+        shift=None,
+        sabr={},
+    )
+    isolated_state, _ = construct_market_state_for_scenario(
+        pack_only_contract,
+        MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+        ),
+    )
+    assert isolated_state.model_parameters == {}
+    assert isolated_state.model_parameter_sets == contract.model_parameter_sets
+
+    base_state = MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        model_parameters={},
+        model_parameter_sets={"existing": {"model_family": "custom"}},
+    )
+
+    market_state, metadata = construct_market_state_for_scenario(
+        contract,
+        base_state,
+        task_id="P005",
+    )
+
+    assert "hull_white" not in market_state.model_parameters
+    assert "mean_reversion" not in market_state.model_parameters
+    assert "sigma" not in market_state.model_parameters
+    assert market_state.model_parameter_sets == {
+        "existing": {"model_family": "custom"},
+        **contract.model_parameter_sets,
+    }
+    assert metadata["scenario_applied_inputs"]["model_parameter_sets"] == [
+        "usd_rates_smile_hw1f"
+    ]
+    scenario_provenance = market_state.market_provenance["market_scenario"]
+    assert scenario_provenance["model_parameter_sets"] == contract.model_parameter_sets
+    assert scenario_provenance["applied_inputs"]["model_parameter_sets"] == [
+        "usd_rates_smile_hw1f"
+    ]
+
+
+@pytest.mark.parametrize(
+    "selected_curve_names",
+    (
+        None,
+        {
+            "discount_curve": "stale_discount",
+            "forecast_curve": "stale_forecast",
+            "credit_curve": "preserved_credit",
+        },
+    ),
+)
+def test_construct_rates_scenario_applies_declared_selected_curve_names(
+    selected_curve_names,
+):
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.core.market_state import MarketState
+
+    contract = load_market_scenario_contracts(root=ROOT)[
+        "usd_rates_smile_physical_bermudan"
+    ]
+    market_state, _ = construct_market_state_for_scenario(
+        contract,
+        MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+            selected_curve_names=selected_curve_names,
+        ),
+    )
+
+    assert market_state.selected_curve_names == {
+        **(
+            {"credit_curve": "preserved_credit"}
+            if selected_curve_names is not None
+            else {}
+        ),
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+
+
+def test_shared_usd_rates_scenario_does_not_implicitly_enable_hull_white():
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.core.market_state import MarketState
+    from trellis.models.hull_white_parameters import resolve_hull_white_parameters
+
+    contract = load_market_scenario_contracts(root=ROOT)["usd_rates_smile"]
+    market_state, _ = construct_market_state_for_scenario(
+        contract,
+        MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+        ),
+    )
+
+    assert market_state.model_parameter_sets is None
+    with pytest.raises(ValueError, match="Hull-White sigma must be provided"):
+        resolve_hull_white_parameters(market_state)
+
+
+@pytest.mark.parametrize(
+    "model_parameter_sets",
+    [
+        ["not-a-map"],
+        {"": {"model_family": "hull_white"}},
+        {"valid_name": ["not-a-parameter-map"]},
+    ],
+)
+def test_load_market_scenario_contracts_rejects_malformed_named_parameter_sets(
+    tmp_path,
+    model_parameter_sets,
+):
+    from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+    manifest = {
+        "version": 2,
+        "scenarios": {
+            "invalid_parameters": {
+                "source": "mock",
+                "as_of": "2024-11-15",
+                "constructor": {
+                    "kind": "flat_rates",
+                    "model_parameter_sets": model_parameter_sets,
+                },
+            }
+        },
+    }
+    (tmp_path / "MARKET_SCENARIOS.yaml").write_text(
+        yaml.safe_dump(manifest),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="model_parameter_sets"):
+        load_market_scenario_contracts(root=tmp_path)
 
 
 def test_construct_market_state_for_scenario_populates_multi_asset_support():

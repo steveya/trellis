@@ -500,6 +500,20 @@ when business-day adjustment moves the first fixed accrual start before
 exercise, because the kernel has no accrued-settlement treatment. The separate
 Bermudan rates Monte Carlo limitation remains unchanged.
 
+``P005`` is the executable regression for this boundary.  Its dedicated
+``usd_rates_smile_physical_bermudan`` scenario selects ``usd_ois``,
+``USD-SOFR-3M``, and the mock calibrated-source
+``usd_rates_smile_hw1f`` parameter fixture without exposing that pack to other
+users of the shared rates scenario.  With the three declared exercise-to-start
+pairs, 2030-11-15 co-terminal maturity, and 2,195 lattice
+steps, the strict lattice lane returns approximately ``58,469.1044`` for a USD
+1,000,000 payer contract struck at 3%.  That number is a deterministic
+regression anchor for this exact task contract, not a claim that nearby
+Bermudan conventions are equivalent.  The paired Monte Carlo target has no
+admitted composition and therefore contributes no price or build attempt; the
+lattice result remains visible while cross-validation reports insufficient
+results.
+
 Typed Contract Inputs
 ~~~~~~~~~~~~~~~~~~~~~
 

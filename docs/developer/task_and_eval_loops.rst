@@ -1495,6 +1495,17 @@ blocked until the generic rates-MC composition surface can map the irregular
 exercise schedule, apply pathwise numeraire discounting, and feed pathwise swap
 values into the early-exercise controller.
 
+The P005 runtime preflights each comparison lane against that semantic
+contract.  ``physical_bermudan_swaption_lattice`` is allowed to compile and
+price, while ``physical_bermudan_swaption_monte_carlo`` becomes the exact
+zero-attempt blocker
+``missing_composition_surface:physical_bermudan_swaption:monte_carlo`` before
+the build pipeline is entered.  The result keeps the successful tree price,
+sets cross-validation to ``insufficient_results``, and records an expected
+``honest_block`` outcome.  It must not erase the usable tree evidence merely
+because the second lane is unavailable, and it must not turn one successful
+lane into a completed comparison.
+
 Transform proving now also distinguishes model families explicitly. The thin
 vanilla transform helper surface is only used for ``equity_diffusion`` claims;
 stochastic-volatility tasks such as the Heston smile canary stay on a checked
