@@ -168,7 +168,9 @@ discount curve, KRD bucket grid, bump/interpolation policy, and tolerance are
 authored. T85 is a ``rewrite_candidate`` until bond cashflows, settlement,
 clean/dirty price basis, accrued-interest treatment, and yield conventions are
 specified. Their ``missing_inputs`` fields are audit data; none of these
-dispositions may cross the executable task-selection boundary.
+dispositions may cross the executable task-selection boundary. Specialized
+default task collections must also omit governed holds; the analytical pricing
+stress set excludes T83 for this reason.
 
 The weighted nth-to-default extension task P006 previously used this honest-
 block boundary while QUA-1237 owned the missing contract. It now carries

@@ -1115,6 +1115,22 @@ def test_real_t03_t83_t85_holds_stop_before_market_or_build(monkeypatch, tmp_pat
     assert calls == []
 
 
+def test_analytical_stress_defaults_exclude_governed_nonpricing_tasks():
+    from scripts.run_analytical_pricing_stress_set import (
+        ANALYTICAL_PRICING_STRESS_TASK_IDS,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    held_task_ids = {
+        task["id"]
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task.get("task_disposition")
+        in {"research_hold", "proof_hold", "rewrite_candidate"}
+    }
+
+    assert held_task_ids.isdisjoint(ANALYTICAL_PRICING_STRESS_TASK_IDS)
+
+
 def test_task_loader_overwrites_manifest_provenance_claims(tmp_path):
     from trellis.agent.task_manifests import load_task_manifest
 
