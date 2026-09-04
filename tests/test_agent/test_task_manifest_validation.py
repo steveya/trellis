@@ -603,6 +603,25 @@ def test_p005_rejects_identity_economic_and_acceptance_drift(tmp_path, mutation)
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("lattice_date_tolerance_days", False),
+        ("floating_gearing", True),
+        ("floating_spread", False),
+    ),
+)
+def test_p005_rejects_booleans_for_numeric_contract_fields(tmp_path, field, value):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P005"))
+    task["extension_contract"][field] = value
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.bermudan_swaption_invalid_contract" in _codes(report)
+
+
+@pytest.mark.parametrize(
     "mutation",
     (
         lambda task: task["cross_validate"]["target_contracts"][

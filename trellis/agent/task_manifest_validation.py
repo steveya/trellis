@@ -1053,7 +1053,10 @@ def _validate_p005_physical_bermudan_swaption_contract(
         and _text(task.get("instrument_type")) == "physical_bermudan_swaption"
         and construct_methods == ("rate_tree", "monte_carlo")
         and set(contract) == set(expected_contract)
-        and all(contract.get(key) == value for key, value in expected_contract.items())
+        and all(
+            _manifest_value_matches(contract.get(key), value)
+            for key, value in expected_contract.items()
+        )
         and cross_validate.get("tolerance_pct") == 5.0
         and not any(
             field in task
@@ -1774,6 +1777,18 @@ def _meaningful_value(value: Any) -> bool:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return math.isfinite(float(value))
     return value is not None
+
+
+def _manifest_value_matches(actual: Any, expected: Any) -> bool:
+    """Compare authored exact values without treating booleans as numbers."""
+    if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        return (
+            isinstance(actual, (int, float))
+            and not isinstance(actual, bool)
+            and math.isfinite(float(actual))
+            and actual == expected
+        )
+    return actual == expected
 
 
 def _iso_date(value: Any) -> date | None:
