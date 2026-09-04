@@ -1115,6 +1115,32 @@ def test_real_t03_t83_t85_holds_stop_before_market_or_build(monkeypatch, tmp_pat
     assert calls == []
 
 
+@pytest.mark.parametrize("task_id", ("T03", "T83", "T85"))
+def test_shared_task_runtime_rejects_governed_holds_before_build(task_id):
+    from trellis.agent import task_runtime
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+    from trellis.agent.task_manifests import load_task_manifest
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+    calls: list[str] = []
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        task_runtime.run_task(
+            task,
+            object(),
+            build_fn=lambda *args, **kwargs: calls.append("build"),
+        )
+
+    issues = exc_info.value.report.blocking_issues
+    assert {issue.code for issue in issues} == {"legacy.non_executable_disposition"}
+    assert {issue.task_id for issue in issues} == {task_id}
+    assert calls == []
+
+
 def test_analytical_stress_defaults_exclude_governed_nonpricing_tasks():
     from scripts.run_analytical_pricing_stress_set import (
         ANALYTICAL_PRICING_STRESS_TASK_IDS,

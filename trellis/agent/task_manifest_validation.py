@@ -238,6 +238,7 @@ def assert_executable_task_selection(
     root: Path | None = None,
 ) -> None:
     """Admit validated pricing/block rows and reject incomplete legacy selections."""
+    assert_executable_task_disposition(tasks)
     issues: list[TaskManifestIssue] = []
     for index, task in enumerate(tasks):
         if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
@@ -252,21 +253,37 @@ def assert_executable_task_selection(
                 root=root,
             )
         )
+        issues.extend(task_issues)
+    if issues:
+        report = TaskManifestValidationReport(
+            blocking_issues=tuple(sorted(set(issues))),
+            legacy_issues=(),
+        )
+        raise TaskManifestValidationError(report)
+
+
+def assert_executable_task_disposition(
+    tasks: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject governed legacy holds at the shared execution boundary."""
+    issues: list[TaskManifestIssue] = []
+    for index, task in enumerate(tasks):
+        if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
+            continue
         disposition = _text(task.get("task_disposition"))
         if (
             disposition in _NON_PRICING_LEGACY_DISPOSITIONS
             and disposition != "expected_honest_block"
         ):
-            task_issues.append(
+            issues.append(
                 _issue(
                     LEGACY_TASKS_MANIFEST,
                     "legacy.non_executable_disposition",
                     f"legacy task disposition {disposition!r} is not executable pricing",
                     task_id=_text(task.get("id")),
-                    path=f"{path}.task_disposition",
+                    path=f"selected_tasks[{index}].task_disposition",
                 )
             )
-        issues.extend(task_issues)
     if issues:
         report = TaskManifestValidationReport(
             blocking_issues=tuple(sorted(set(issues))),

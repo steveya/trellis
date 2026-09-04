@@ -84,6 +84,7 @@ from trellis.agent.task_manifests import (
     load_negative_tasks as load_negative_task_manifest,
     load_pricing_tasks as load_pricing_task_manifests,
 )
+from trellis.agent.task_manifest_validation import assert_executable_task_disposition
 from trellis.models.credit_index_option import CreditIndexOptionSpec
 from trellis.models.local_vol_option import LocalVolVanillaOptionSpec
 
@@ -2054,6 +2055,7 @@ def run_task(
     llm_cassette_metadata: Mapping[str, Any] | None = None,
 ) -> dict:
     """Execute one task with separate artifact-freshness and source-origin policy."""
+    assert_executable_task_disposition([task])
     if str(task.get("task_kind") or "").strip() == "fpml_conformance":
         from trellis.agent.fpml_conformance import run_fpml_conformance_task
 
