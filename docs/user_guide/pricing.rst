@@ -810,6 +810,32 @@ parameters, and tree-step controls remain visible. ``price_swaption_tree(...)``
 and ``build_swaption_tree_spec(...)`` remain callable compatibility/reference
 APIs, but neither is live build authority.
 
+Physical Bermudan swaptions use a separate strict route rather than extending
+the European or legacy Bermudan surface by assumption.  A request is
+constructable only when it supplies ordered exercise dates, one swap-start date
+for each exercise, a common co-terminal maturity, complete fixed- and
+floating-leg conventions and business-day lags, separate named discount and
+forecast curves, an exact named provenance-complete Hull-White parameter set,
+ACT/365F model time with an exact shipped calendar, an explicit lattice step
+count, and a lattice date tolerance. Settlement must be physical and floating
+coupons are currently limited to simple compounding under a static additive
+forward-basis policy. ACT/ACT ICMA coupon accrual, parameterized day-of-month
+rolls, unimplemented calendar aliases, and seasoned or pre-started fixed tails
+fail closed rather than being approximated. In particular, each
+business-day-adjusted first fixed accrual start must be on or after its exercise
+date; the route does not infer accrued-settlement treatment for a fixed coupon
+that has already started.
+
+The generated adapter uses
+``compile_physical_bermudan_swap_tail_spec(...)`` to fail closed on unsupported
+calendar, day-count, frequency, stub, or roll tokens.  It then binds only the
+named curves and model-parameter set, builds a calibrated generic Hull-White
+lattice, and calls ``price_physical_bermudan_swaption_lattice(...)``.  Distinct
+adjusted dates cannot alias the same lattice step and every mapped date must
+fit the authored tolerance.  The route never converts a Black quote into
+Hull-White volatility and never substitutes the legacy Bermudan helper or a
+European Black lower bound.
+
 European zero-coupon-bond options follow the same policy. The analytical lane
 resolves the shared discount-bond claim, constructs the raw Jamshidian input,
 and applies option direction and notional outside
@@ -1012,9 +1038,12 @@ least-squares fit.
 The supported Hull-White workflow uses that same governed surface, but its
 output is reusable by later tree helpers as well as inspectable by review
 tools. ``calibrate_hull_white(...)`` returns the solver artifacts, the repriced
-strip residuals, and a stable ``model_parameters`` payload; calling
-``result.apply_to_market_state(...)`` makes those calibrated parameters the
-runtime default for callable-bond, Bermudan-swaption, and ZCB-option helpers.
+strip residuals, and a stable ``model_parameters`` payload with explicit
+calibration provenance. Calling ``result.apply_to_market_state(...)`` makes
+those calibrated parameters available to callable-bond, legacy
+Bermudan-swaption, and ZCB-option helpers.  The strict physical Bermudan route
+does not consume that permissive default: its contract must name the exact
+``model_parameter_sets`` entry.
 
 SABR smile fitting now exposes an analogous review surface. Callers that need a
 reusable calibration artifact can build a ``SABRSmileSurface`` first and then

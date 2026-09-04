@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from numbers import Real
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
@@ -507,6 +508,32 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "map_swaption_to_tree_helper",
                     ),
                     spec_schema_hints=("bermudan_swaption",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="physical_bermudan_swaption",
+            semantic_id="physical_bermudan_swaption",
+            candidate_methods=("rate_tree",),
+            default_preferred_method="rate_tree",
+            method_surfaces=(
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=(
+                        "trellis.models.hull_white_parameters",
+                        "trellis.models.rate_swap_tail",
+                        "trellis.models.trees.models",
+                        "trellis.models.trees.algebra",
+                    ),
+                    primitive_families=("physical_bermudan_swaption_lattice",),
+                    adapter_obligations=(
+                        "preserve_authored_exercise_to_swap_start_mapping",
+                        "build_convention_complete_co_terminal_swap_tails",
+                        "bind_named_discount_and_forecast_curves",
+                        "bind_named_hull_white_parameter_source",
+                        "reject_cash_or_annuity_settlement",
+                    ),
+                    spec_schema_hints=("physical_bermudan_swaption",),
                 ),
             ),
         ),
@@ -3274,6 +3301,589 @@ def make_rate_style_swaption_contract(
     )
 
 
+_PHYSICAL_BERMUDAN_FREQUENCIES = frozenset(
+    {"annual", "semiannual", "semi_annual", "quarterly", "monthly"}
+)
+_PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS = frozenset(
+    {
+        "ACT/360",
+        "ACT/365",
+        "ACT/365F",
+        "ACT/ACT",
+        "ACT/ACT ISDA",
+        "30/360",
+        "30E/360",
+        "30E/360 ISDA",
+        "ACT/365.25",
+        "BUS/252",
+        "1/1",
+    }
+)
+_PHYSICAL_BERMUDAN_CALENDARS = frozenset(
+    {
+        "WeekendOnly",
+        "weekend_only",
+        "USSettlement",
+        "UKSettlement",
+        "TARGET",
+        "Tokyo",
+        "Sydney",
+        "Toronto",
+        "Zurich",
+        "Brazil",
+    }
+)
+_PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS = frozenset(
+    {
+        "unadjusted",
+        "following",
+        "modified_following",
+        "preceding",
+        "modified_preceding",
+    }
+)
+_PHYSICAL_BERMUDAN_STUB_RULES = frozenset(
+    {
+        "short_first",
+        "short_initial",
+        "short_last",
+        "short_final",
+        "long_first",
+        "long_initial",
+        "long_last",
+        "long_final",
+    }
+)
+_PHYSICAL_BERMUDAN_ROLL_CONVENTIONS = frozenset({"none", "eom", "imm"})
+
+
+def _physical_bermudan_authored_string(
+    value: object,
+    *,
+    name: str,
+    choices: frozenset[str] | None = None,
+) -> str:
+    """Return one exact authored string without repairing its spelling."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{name} must be an exact non-blank string without surrounding whitespace")
+    if choices is not None and value not in choices:
+        raise ValueError(f"{name} must be one of: {', '.join(sorted(choices))}")
+    return value
+
+
+def _physical_bermudan_authored_number(value: object, *, name: str) -> float:
+    """Return one finite authored real number, rejecting bool and numeric text."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{name} must be an authored finite number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValueError(f"{name} must be an authored finite number")
+    return normalized
+
+
+def _physical_bermudan_authored_integer(
+    value: object,
+    *,
+    name: str,
+    positive: bool = False,
+) -> int:
+    """Return one exact authored integer, rejecting Python's bool subtype."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{name} must be an authored {qualifier} integer")
+    if (positive and value <= 0) or (not positive and value < 0):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{name} must be an authored {qualifier} integer")
+    return value
+
+
+def _physical_bermudan_authored_date(value: object, *, name: str) -> str:
+    """Return one exact ISO date string from an authored string or date."""
+    if type(value) is date:
+        return value.isoformat()
+    if not isinstance(value, str) or value != value.strip():
+        raise ValueError(f"{name} must be an ISO YYYY-MM-DD date")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name} must be an ISO YYYY-MM-DD date") from None
+    if parsed.isoformat() != value:
+        raise ValueError(f"{name} must be an ISO YYYY-MM-DD date")
+    return value
+
+
+def make_physical_bermudan_swaption_contract(
+    *,
+    description: str,
+    exercise_dates: tuple[object, ...] | list[object],
+    exercise_to_swap_start: tuple[tuple[object, object], ...] | list[tuple[object, object]],
+    swap_maturity: object,
+    notional: float,
+    fixed_rate: float,
+    payer_receiver: str,
+    settlement_type: str,
+    currency: str,
+    discount_curve_id: str,
+    forecast_curve_id: str,
+    hull_white_parameter_source: str,
+    fixed_frequency: str,
+    fixed_day_count: str,
+    fixed_calendar_name: str,
+    fixed_business_day_adjustment: str,
+    fixed_stub_rule: str,
+    fixed_roll_convention: str,
+    fixed_payment_lag_business_days: int,
+    floating_frequency: str,
+    floating_day_count: str,
+    floating_calendar_name: str,
+    floating_business_day_adjustment: str,
+    floating_stub_rule: str,
+    floating_roll_convention: str,
+    floating_fixing_lag_business_days: int,
+    floating_reset_lag_business_days: int,
+    floating_payment_lag_business_days: int,
+    floating_rate_index: str,
+    floating_compounding: str,
+    floating_gearing: float,
+    floating_spread: float,
+    model_time_day_count: str,
+    model_time_calendar_name: str,
+    projection_policy: str,
+    lattice_steps: int,
+    lattice_date_tolerance_days: int,
+    preferred_method: str = "rate_tree",
+) -> SemanticContract:
+    """Construct the strict physical, dual-curve Bermudan swaption contract.
+
+    Every authored economic term is required.  This constructor deliberately
+    has no convention, curve, model-parameter, or settlement defaults because
+    those omissions materially change the value of a physically settled
+    co-terminal swap tail.
+    """
+    if not isinstance(exercise_dates, (tuple, list)):
+        raise ValueError("exercise_dates must be an explicit ordered sequence")
+    authored_exercise_dates = tuple(exercise_dates)
+    schedule = tuple(
+        _physical_bermudan_authored_date(value, name=f"exercise_dates[{index}]")
+        for index, value in enumerate(authored_exercise_dates)
+    )
+    if len(schedule) < 2:
+        raise ValueError(
+            "Physical Bermudan swaption contract requires at least two exercise dates."
+        )
+    if len(set(schedule)) != len(authored_exercise_dates):
+        raise ValueError(
+            "Physical Bermudan swaption exercise dates must be non-blank and unique."
+        )
+    if not isinstance(exercise_to_swap_start, (tuple, list)):
+        raise ValueError("exercise_to_swap_start must be an explicit ordered sequence")
+    normalized_mapping: list[tuple[str, str]] = []
+    for index, pair in enumerate(exercise_to_swap_start):
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise ValueError(
+                "exercise_to_swap_start must contain explicit (exercise_date, swap_start_date) pairs."
+            )
+        normalized_mapping.append(
+            (
+                _physical_bermudan_authored_date(
+                    pair[0], name=f"exercise_to_swap_start[{index}][0]"
+                ),
+                _physical_bermudan_authored_date(
+                    pair[1], name=f"exercise_to_swap_start[{index}][1]"
+                ),
+            )
+        )
+    if tuple(item[0] for item in normalized_mapping) != schedule:
+        raise ValueError(
+            "exercise_to_swap_start must map every authored exercise date exactly once and in order"
+        )
+    normalized_maturity = _physical_bermudan_authored_date(
+        swap_maturity,
+        name="swap_maturity",
+    )
+
+    normalized_strings = {
+        "payer_receiver": _physical_bermudan_authored_string(
+            payer_receiver, name="payer_receiver", choices=frozenset({"payer", "receiver"})
+        ),
+        "settlement_type": _physical_bermudan_authored_string(
+            settlement_type, name="settlement_type", choices=frozenset({"physical"})
+        ),
+        "currency": _physical_bermudan_authored_string(currency, name="currency"),
+        "discount_curve_id": _physical_bermudan_authored_string(
+            discount_curve_id, name="discount_curve_id"
+        ),
+        "forecast_curve_id": _physical_bermudan_authored_string(
+            forecast_curve_id, name="forecast_curve_id"
+        ),
+        "hull_white_parameter_source": _physical_bermudan_authored_string(
+            hull_white_parameter_source, name="hull_white_parameter_source"
+        ),
+        "fixed_frequency": _physical_bermudan_authored_string(
+            fixed_frequency,
+            name="fixed_frequency",
+            choices=_PHYSICAL_BERMUDAN_FREQUENCIES,
+        ),
+        "fixed_day_count": _physical_bermudan_authored_string(
+            fixed_day_count,
+            name="fixed_day_count",
+            choices=_PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
+        ),
+        "fixed_calendar_name": _physical_bermudan_authored_string(
+            fixed_calendar_name,
+            name="fixed_calendar_name",
+            choices=_PHYSICAL_BERMUDAN_CALENDARS,
+        ),
+        "fixed_business_day_adjustment": _physical_bermudan_authored_string(
+            fixed_business_day_adjustment,
+            name="fixed_business_day_adjustment",
+            choices=_PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
+        ),
+        "fixed_stub_rule": _physical_bermudan_authored_string(
+            fixed_stub_rule,
+            name="fixed_stub_rule",
+            choices=_PHYSICAL_BERMUDAN_STUB_RULES,
+        ),
+        "fixed_roll_convention": _physical_bermudan_authored_string(
+            fixed_roll_convention,
+            name="fixed_roll_convention",
+            choices=_PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
+        ),
+        "floating_frequency": _physical_bermudan_authored_string(
+            floating_frequency,
+            name="floating_frequency",
+            choices=_PHYSICAL_BERMUDAN_FREQUENCIES,
+        ),
+        "floating_day_count": _physical_bermudan_authored_string(
+            floating_day_count,
+            name="floating_day_count",
+            choices=_PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
+        ),
+        "floating_calendar_name": _physical_bermudan_authored_string(
+            floating_calendar_name,
+            name="floating_calendar_name",
+            choices=_PHYSICAL_BERMUDAN_CALENDARS,
+        ),
+        "floating_business_day_adjustment": _physical_bermudan_authored_string(
+            floating_business_day_adjustment,
+            name="floating_business_day_adjustment",
+            choices=_PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
+        ),
+        "floating_stub_rule": _physical_bermudan_authored_string(
+            floating_stub_rule,
+            name="floating_stub_rule",
+            choices=_PHYSICAL_BERMUDAN_STUB_RULES,
+        ),
+        "floating_roll_convention": _physical_bermudan_authored_string(
+            floating_roll_convention,
+            name="floating_roll_convention",
+            choices=_PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
+        ),
+        "floating_rate_index": _physical_bermudan_authored_string(
+            floating_rate_index, name="floating_rate_index"
+        ),
+        "floating_compounding": _physical_bermudan_authored_string(
+            floating_compounding,
+            name="floating_compounding",
+            choices=frozenset({"simple"}),
+        ),
+        "model_time_day_count": _physical_bermudan_authored_string(
+            model_time_day_count,
+            name="model_time_day_count",
+            choices=frozenset({"ACT/365F"}),
+        ),
+        "model_time_calendar_name": _physical_bermudan_authored_string(
+            model_time_calendar_name,
+            name="model_time_calendar_name",
+            choices=_PHYSICAL_BERMUDAN_CALENDARS,
+        ),
+        "projection_policy": _physical_bermudan_authored_string(
+            projection_policy,
+            name="projection_policy",
+            choices=frozenset({"static_additive_forward_basis"}),
+        ),
+    }
+    if (
+        len(normalized_strings["currency"]) != 3
+        or not normalized_strings["currency"].isascii()
+        or not normalized_strings["currency"].isalpha()
+        or normalized_strings["currency"] != normalized_strings["currency"].upper()
+    ):
+        raise ValueError("currency must be exactly three uppercase ASCII letters")
+    if normalized_strings["discount_curve_id"] == normalized_strings["forecast_curve_id"]:
+        raise ValueError("discount_curve_id and forecast_curve_id must identify separate curves")
+    if normalized_strings["floating_rate_index"] != normalized_strings["forecast_curve_id"]:
+        raise ValueError("floating_rate_index must exactly match forecast_curve_id")
+
+    normalized_notional = _physical_bermudan_authored_number(notional, name="notional")
+    if normalized_notional <= 0.0:
+        raise ValueError("notional must be positive")
+    normalized_fixed_rate = _physical_bermudan_authored_number(
+        fixed_rate, name="fixed_rate"
+    )
+    normalized_gearing = _physical_bermudan_authored_number(
+        floating_gearing, name="floating_gearing"
+    )
+    normalized_spread = _physical_bermudan_authored_number(
+        floating_spread, name="floating_spread"
+    )
+    normalized_integer_terms = {
+        "fixed_payment_lag_business_days": _physical_bermudan_authored_integer(
+            fixed_payment_lag_business_days, name="fixed_payment_lag_business_days"
+        ),
+        "floating_fixing_lag_business_days": _physical_bermudan_authored_integer(
+            floating_fixing_lag_business_days,
+            name="floating_fixing_lag_business_days",
+        ),
+        "floating_reset_lag_business_days": _physical_bermudan_authored_integer(
+            floating_reset_lag_business_days,
+            name="floating_reset_lag_business_days",
+        ),
+        "floating_payment_lag_business_days": _physical_bermudan_authored_integer(
+            floating_payment_lag_business_days,
+            name="floating_payment_lag_business_days",
+        ),
+        "lattice_steps": _physical_bermudan_authored_integer(
+            lattice_steps, name="lattice_steps", positive=True
+        ),
+        "lattice_date_tolerance_days": _physical_bermudan_authored_integer(
+            lattice_date_tolerance_days, name="lattice_date_tolerance_days"
+        ),
+    }
+
+    parsed_maturity = date.fromisoformat(normalized_maturity)
+    if date.fromisoformat(schedule[-1]) >= parsed_maturity:
+        raise ValueError("swap_maturity must follow every exercise date")
+    for exercise_text, start_text in normalized_mapping:
+        exercise_date = date.fromisoformat(exercise_text)
+        start_date = date.fromisoformat(start_text)
+        if start_date < exercise_date:
+            raise ValueError("swap-start dates cannot precede their exercise dates")
+        if start_date >= parsed_maturity:
+            raise ValueError("co-terminal swap starts must precede swap_maturity")
+
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "physical_bermudan_swaption",
+        preferred_method=preferred_method,
+    )
+    terms = _freeze_mapping(
+        {
+            "notional": normalized_notional,
+            "fixed_rate": normalized_fixed_rate,
+            "exercise_dates": schedule,
+            "exercise_to_swap_start": tuple(normalized_mapping),
+            "swap_maturity": normalized_maturity,
+            **normalized_strings,
+            **normalized_integer_terms,
+            "floating_gearing": normalized_gearing,
+            "floating_spread": normalized_spread,
+        }
+    )
+
+    product = SemanticProductSemantics(
+        semantic_id="physical_bermudan_swaption",
+        semantic_version="c1.0",
+        instrument_class="physical_bermudan_swaption",
+        instrument_aliases=(
+            "physical_bermudan_swaption",
+            "strict_physical_bermudan_swaption",
+        ),
+        payoff_family="physical_bermudan_swaption",
+        derivative_family="swaption",
+        underlying=SemanticUnderlyingAxes(
+            asset_class="rate",
+            identifiers=(normalized_strings["floating_rate_index"],),
+        ),
+        conventions=ConventionEnv(
+            calendar=normalized_strings["fixed_calendar_name"],
+            business_day_convention=normalized_strings["fixed_business_day_adjustment"],
+            day_count_convention=normalized_strings["model_time_day_count"],
+            payment_currency=normalized_strings["currency"],
+            reporting_currency=normalized_strings["currency"],
+            tags=("fixed_and_floating_leg_conventions_in_term_fields",),
+        ),
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="dual_curve_co_terminal_swap_tails",
+        payoff_rule="co_terminal_fixed_float_swap_tail_exercise_value",
+        settlement_rule="physical_swap_delivery_at_exercise",
+        payoff_traits=(
+            "physical_settlement",
+            "co_terminal_swap_tails",
+            "dual_curve_projection",
+            "strict_conventions",
+            "named_hull_white_parameters",
+            "bermudan_exercise",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="discount_curve_state",
+                observable_type="discount_curve",
+                source="discount_curve",
+                schedule_role="decision_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="forecast_curve_state",
+                observable_type="forward_curve",
+                source="forecast_curve",
+                schedule_role="decision_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="co_terminal_swap_tail_value",
+                observable_type="fixed_float_swap_value",
+                source="discount_and_forecast_curve_projection",
+                schedule_role="decision_dates",
+                availability_phase="determination",
+                dependencies=("discount_curve_state", "forecast_curve_state"),
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="exercise_date",
+                kind="contract_memory",
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="co_terminal_swap_tail_value",
+                kind="event_state",
+                source_observables=("co_terminal_swap_tail_value",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="physical_swap_delivery",
+                settle_date_rule="physical_swap_delivery_at_exercise",
+                amount_expression="deliver_authored_fixed_for_floating_swap_tail",
+                currency=normalized_strings["currency"],
+                settlement_kind="physical",
+                trigger="holder_exercises_swaption",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "continue"),
+            description="Holder chooses physical delivery or continuation at authored dates.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
+        term_fields=terms,
+        exercise_style="bermudan",
+        path_dependence="schedule_dependent",
+        schedule_dependence=True,
+        state_dependence="schedule_dependent",
+        model_family="interest_rate",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="authored_exercise_to_swap_start_mapping",
+        maturity_settlement_rule="physical_swap_delivery_at_exercise",
+        state_variables=("exercise_date", "co_terminal_swap_tail_value"),
+        event_transitions=(
+            "value_authored_co_terminal_swap_tail",
+            "holder_exercise_or_continue",
+            "deliver_swap_tail_on_exercise",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "value_authored_co_terminal_swap_tail",
+                "holder_exercise_or_continue",
+                "deliver_swap_tail_on_exercise",
+            ),
+            state_dependence="schedule_dependent",
+        ),
+    )
+    contract = _semantic_contract_from_sections(
+        product=product,
+        required_inputs=(
+            SemanticMarketInputSpec(
+                input_id="discount_curve",
+                description="Named curve used to discount both swap legs.",
+                capability="discount_curve",
+                aliases=("discount", "ois_curve"),
+                connector_hint="Resolve exactly term_fields.discount_curve_id.",
+                allowed_provenance=("observed",),
+            ),
+            SemanticMarketInputSpec(
+                input_id="forecast_curve",
+                description="Named curve used to project floating coupons.",
+                capability="forward_curve",
+                aliases=("forward_curve", "projection_curve"),
+                connector_hint="Resolve exactly term_fields.forecast_curve_id without discount-curve fallback.",
+                allowed_provenance=("observed",),
+            ),
+            SemanticMarketInputSpec(
+                input_id="hull_white_parameters",
+                description="Named Hull-White one-factor parameter set.",
+                capability="model_parameters",
+                aliases=("model_parameters", "hull_white_parameter_set"),
+                connector_hint="Resolve exactly term_fields.hull_white_parameter_source.",
+                allowed_provenance=("observed", "calibrated"),
+            ),
+        ),
+        derivable_inputs=(),
+        estimation_policy=(),
+        provenance_requirements=(
+            "discount_and_forecast_curves_are_named_observations",
+            "hull_white_parameters_are_named_observed_or_calibrated_inputs",
+        ),
+        missing_data_error_policy=(
+            "fail_before_pricing_when_any_named_curve_or_parameter_source_is_absent",
+        ),
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
+        bundle_hints=("physical_bermudan_swaption_contract",),
+        universal_checks=(
+            "authored_exercise_to_swap_start_mapping_present",
+            "physical_settlement_only",
+            "discount_and_forecast_curve_identities_present",
+            "named_hull_white_parameter_source_present",
+            "fixed_and_floating_leg_conventions_complete",
+        ),
+        semantic_checks=(
+            "each_exercise_uses_its_own_co_terminal_swap_tail",
+            "floating_leg_uses_named_forecast_curve",
+            "both_legs_use_authored_conventions",
+            "no_european_or_black_fallback",
+        ),
+        comparison_targets=(normalized_method,),
+        reduction_cases=("single_curve_co_terminal_swap_tail",),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
+        proving_tasks=(
+            "validate_physical_bermudan_swaption_contract",
+            "emit_strict_dual_curve_lattice_blueprint",
+        ),
+        blocked_by=(),
+        spec_schema_hints=surface.spec_schema_hints,
+        description=description,
+    )
+    return dataclasses.replace(
+        contract,
+        methods=dataclasses.replace(
+            contract.methods,
+            method_limitations=(
+                "Only physically settled co-terminal swap tails are admitted.",
+                "The lattice route requires explicit named Hull-White parameters.",
+                "No European closed-form or implied-volatility fallback is admitted.",
+            ),
+        ),
+    )
+
+
 def make_period_rate_option_strip_contract(
     *,
     description: str,
@@ -4243,6 +4853,20 @@ def _rebuild_rate_style_swaption_contract(
     )
 
 
+def _rebuild_physical_bermudan_swaption_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild the strict physical Bermudan contract without deriving terms."""
+    product = contract.product
+    terms = dict(getattr(product, "term_fields", {}) or {})
+    return make_physical_bermudan_swaption_contract(
+        description=contract.description,
+        preferred_method=normalized_method,
+        **terms,
+    )
+
+
 def _rebuild_period_rate_option_strip_contract(
     contract: SemanticContract,
     normalized_method: str,
@@ -4321,6 +4945,7 @@ _SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], Se
         "callable_bond": _rebuild_callable_bond_contract,
         "range_accrual": _rebuild_range_accrual_contract,
         "rate_style_swaption": _rebuild_rate_style_swaption_contract,
+        "physical_bermudan_swaption": _rebuild_physical_bermudan_swaption_contract,
         "period_rate_option_strip": _rebuild_period_rate_option_strip_contract,
         "credit_default_swap": _rebuild_credit_default_swap_contract,
         "nth_to_default": _rebuild_nth_to_default_contract,

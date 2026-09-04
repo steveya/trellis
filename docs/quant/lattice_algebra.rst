@@ -354,11 +354,13 @@ whereas a lognormal model retains :math:`\sigma_{\mathrm{Black}}`. Missing
 discount or volatility evidence, unsupported model names, non-positive
 horizons, and invalid step policies fail closed.
 
-The callable/puttable fixed-income and Bermudan-swaption lattice compositions
-consume this same binding while retaining their own schedule and payoff
-semantics. Generated construction therefore uses the resolver with ``MODEL_REGISTRY``,
-``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)`` without copying
-market-default conventions or invoking a product pricer.
+The callable/puttable fixed-income and legacy Bermudan-swaption lattice
+compositions consume this same permissive binding while retaining their own
+schedule and payoff semantics.  The strict physical Bermudan route described
+below instead requires an exact named Hull-White parameter set and does not
+admit surface conversion or defaults.  Both forms use ``MODEL_REGISTRY``,
+``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)`` without invoking a
+product pricer.
 
 Callable And Puttable Fixed-Income Composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -394,9 +396,11 @@ authority.
 Bermudan Swaption Composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The admitted Bermudan swaption tree lane is a concrete example of composing a
-product from the generic lattice boundary. Generated construction follows this
-order:
+Trellis has two deliberately separate Bermudan rates surfaces.  The original
+``bermudan_swaption`` lane is retained as legacy T04 compatibility evidence.
+It uses one fixed-leg schedule, a par-floating-leg identity, and permissive
+short-rate input resolution.  Generated construction on that legacy lane
+follows this order:
 
 1. Normalize the live exercise dates and build the underlying fixed-leg payment
    timeline.
@@ -428,13 +432,73 @@ come from ``LatticeRollbackObservation.continuation_values``. Using
 ``post_cashflow_values`` would include a fixed coupon paid at the exercise step
 and can double count that coupon in the exercise underlying.
 
-The builder navigation entry is
+Its builder navigation entry is
 ``bermudan_swaption_rate_lattice_composition`` in the canonical API map. The
 retained product pricing wrapper and product contract compiler are compatibility
 and independent reference surfaces only; neither is admitted as generated
-construction authority. The separate Bermudan rates Monte Carlo limitation
-remains unchanged because this composition proves only the one-factor lattice
-lane.
+construction authority.  This lane must not be selected for a request that
+declares physical delivery, separate discount and forecast curves, explicit
+exercise-to-swap-start pairs, or independent fixed/floating conventions.
+
+The strict ``physical_bermudan_swaption`` lane uses the distinct
+``physical_bermudan_swaption_lattice`` route.  It requires all of the following
+before generation:
+
+* ordered exercise dates and an exact swap-start date for each exercise;
+* one common co-terminal maturity;
+* complete fixed and floating frequency, day-count, calendar,
+  business-day-adjustment, stub, roll, and payment/reset/fixing-lag terms;
+* a first adjusted fixed accrual start on or after each corresponding exercise
+  date;
+* separate named discount and forecast curves;
+* an exact named, provenance-complete Hull-White parameter set containing
+  finite non-negative ``mean_reversion`` and ``sigma``;
+* ACT/365F model time, an exact shipped calendar, an authored lattice step
+  count, and maximum date-mapping error; and
+* physical settlement with the bounded
+  ``static_additive_forward_basis`` projection policy.
+
+For a floating accrual period :math:`[A,B]` with accrual fraction
+:math:`\alpha`, the time-zero discount and forecast forwards are
+
+.. math::
+
+   L_d(0;A,B) = \frac{P_d(0,A)/P_d(0,B)-1}{\alpha}, \qquad
+   L_f(0;A,B) = \frac{P_f(0,A)/P_f(0,B)-1}{\alpha}.
+
+The checked bounded model holds
+:math:`b(A,B)=L_f(0;A,B)-L_d(0;A,B)` fixed at every node.  At exercise
+:math:`t_e`, conditional discount-bond values from the calibrated short-rate
+lattice produce
+
+.. math::
+
+   L_d(t_e;A,B)=\frac{P_d(t_e,A)/P_d(t_e,B)-1}{\alpha},
+   \qquad L_f(t_e;A,B)=L_d(t_e;A,B)+b(A,B).
+
+The floating and fixed tails are valued coupon by coupon with their own
+schedules and payment dates.  Immediate exercise is the positive part of the
+payer or receiver signed swap-tail value; backward induction applies the
+holder maximum at every authored exercise date.
+
+The generated adapter compiles the strict semantic spec with
+``compile_physical_bermudan_swap_tail_spec(...)``, binds
+``NamedRateCurve`` instances, resolves only the named parameter set, builds the
+generic Hull-White lattice, and calls
+``price_physical_bermudan_swaption_lattice(...)``.  Every economically used
+adjusted date must map within the authored tolerance, and two distinct dates
+may not collide on one lattice step.  There is no Black-volatility conversion,
+default mean reversion, European fallback, or legacy Bermudan helper on this
+route.
+
+This strict lane is still bounded to a one-factor, constant-parameter
+Hull-White lattice, simple floating coupons, and deterministic additive basis.
+ACT/ACT ICMA coupons are rejected until explicit quasi-coupon reference periods
+exist, and parameterized day-of-month rolls or unimplemented calendar aliases
+are not approximated. Seasoned or pre-started fixed tails are also rejected
+when business-day adjustment moves the first fixed accrual start before
+exercise, because the kernel has no accrued-settlement treatment. The separate
+Bermudan rates Monte Carlo limitation remains unchanged.
 
 Typed Contract Inputs
 ~~~~~~~~~~~~~~~~~~~~~

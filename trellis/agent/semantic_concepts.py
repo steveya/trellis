@@ -549,6 +549,64 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         ),
     ),
     _concept(
+        semantic_id="physical_bermudan_swaption",
+        semantic_version="c1.0",
+        scope=(
+            "physically settled Bermudan swaptions on convention-complete "
+            "co-terminal fixed-for-floating swap tails"
+        ),
+        description=(
+            "Strict dual-curve Bermudan swaption semantics with authored leg "
+            "conventions and a named Hull-White parameter source."
+        ),
+        concept_role="product_contract",
+        aliases=(
+            "physical_bermudan_swaption",
+            "strict_physical_bermudan_swaption",
+        ),
+        required_contract_fields=(
+            "underlier_structure",
+            "payoff_rule",
+            "settlement_rule",
+            "observation_schedule",
+            "term_fields",
+        ),
+        allowed_contract_fields=(
+            "instrument_class",
+            "underlier_structure",
+            "payoff_family",
+            "payoff_rule",
+            "settlement_rule",
+            "payoff_traits",
+            "exercise_style",
+            "path_dependence",
+            "schedule_dependence",
+            "state_dependence",
+            "model_family",
+            "multi_asset",
+            "observation_schedule",
+            "observation_basis",
+            "state_variables",
+            "event_transitions",
+            "term_fields",
+        ),
+        required_primitives=("physical_bermudan_swaption_lattice",),
+        required_market_inputs=(
+            "discount_curve",
+            "forward_curve",
+            "model_parameters",
+        ),
+        route_family="rate_lattice",
+        example_requests=(
+            "Physical payer Bermudan swaption with explicit co-terminal USD swap tails",
+        ),
+        cue_phrases=(
+            "physical bermudan swaption",
+            "co-terminal swap tails",
+            "coterminal swap tails",
+        ),
+    ),
+    _concept(
         semantic_id="period_rate_option_strip",
         semantic_version="c2.1",
         scope="schedule-driven cap/floor strips assembled from caplets or floorlets",

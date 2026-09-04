@@ -1202,15 +1202,18 @@ contract, and calls ``price_on_lattice(...)``. The semantic gate requires
 ``price_swaption_tree(...)`` surface remains independent comparison evidence,
 not the generated artifact identity.
 
-The underlying market binding is now product-neutral. The ``rate_lattice`` API
+The underlying permissive market binding is product-neutral. The ``rate_lattice`` API
 card exposes ``resolve_short_rate_lattice_inputs(...)`` together with
 ``MODEL_REGISTRY``, ``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)``.
 The resolver records canonical model and volatility units, gives explicit or
 calibrated parameters precedence over surface-derived defaults, and fails
 closed when discount or volatility evidence is absent. Callable-bond and
-Bermudan-swaption builders share this binding, so a later route migration can
-remove product-wrapper authority without asking generated code to recreate
-normal-versus-lognormal volatility conversion.
+legacy Bermudan-swaption builders share this binding.  The strict physical
+Bermudan route intentionally does not: it calls
+``resolve_named_hull_white_parameter_set(...)`` and requires the task contract
+to name a provenance-complete parameter set.  This separation prevents a
+physical dual-curve request from inheriting a Black-volatility conversion or
+default mean reversion through the compatibility lane.
 
 Helper-authority inventory
 --------------------------
@@ -1479,11 +1482,18 @@ excluded ``compatibility_reference`` entries. The semantic validator blocks
 those wrappers and ranked-observation calls when a generated source claims the
 terminal-basket composition surface.
 
-``P005`` is the proving case. Its Bermudan exercise schedule is retained through
-semantic drafting. The rate-tree lane remains admitted. The Monte Carlo lane
-blocks before generation until the generic rates-MC composition surface can map
-the irregular exercise schedule, apply pathwise numeraire discounting, and feed
-pathwise swap values into the early-exercise controller.
+``P005`` is the proving case for the strict
+``physical_bermudan_swaption_lattice`` route. Semantic drafting must retain
+every exercise-to-swap-start pair, the common maturity, both leg convention
+bundles, separate curve names, the named Hull-White parameter source, and the
+authored grid controls. Deterministic lowering compiles that contract, binds
+only those named market objects, constructs the generic calibrated lattice,
+and delegates swap-tail rollback to the reusable pricing kernel. Unsupported
+or missing terms block before generation; the runtime must not borrow the T04
+legacy helper or the European Black comparator. The Monte Carlo lane remains
+blocked until the generic rates-MC composition surface can map the irregular
+exercise schedule, apply pathwise numeraire discounting, and feed pathwise swap
+values into the early-exercise controller.
 
 Transform proving now also distinguishes model families explicitly. The thin
 vanilla transform helper surface is only used for ``equity_diffusion`` claims;

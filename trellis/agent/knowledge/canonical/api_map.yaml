@@ -631,6 +631,29 @@ european_swaption_rate_lattice_composition:
     - "Compile the lattice contract with compile_bermudan_swaption_contract_spec(...) and evaluate it with generic price_on_lattice(...)"
     - "price_swaption_tree(...) and build_swaption_tree_spec(...) remain compatibility/reference APIs and are not generated construction authority"
 
+physical_bermudan_swaption_lattice_composition:
+  module: trellis.models.rate_swap_tail
+  instruments: [physical_bermudan_swaption]
+  methods: [rate_tree]
+  navigation:
+    aliases: [physical_bermudan_swaption, physical_bermudan_swaption_lattice, dual_curve_bermudan_swap_tail]
+  modules:
+    contract_and_schedule: trellis.models.rate_swap_tail
+    model_parameters: trellis.models.hull_white_parameters
+    lattice_algebra: trellis.models.trees.algebra
+    lattice_rollback: trellis.models.trees.lattice
+  key_imports:
+    - "from trellis.models.rate_swap_tail import ExerciseSwapStart, FixedLegConvention, FloatingLegConvention, NamedRateCurve, PhysicalBermudanSwapTailSpec, compile_physical_bermudan_swap_tail_spec"
+    - "from trellis.models.rate_swap_tail import resolve_co_terminal_swap_tails, map_swap_tail_dates_to_lattice, observe_conditional_discount_bonds, build_bermudan_swaption_exercise_values, price_physical_bermudan_swaption_lattice"
+    - "from trellis.models.hull_white_parameters import ResolvedHullWhiteParameterSet, resolve_named_hull_white_parameter_set"
+  notes:
+    - "This is the strict physical-settlement Bermudan route. Each exercise maps explicitly to its own swap start and co-terminal fixed/floating tail; the legacy bermudan_swaption route is not a substitute."
+    - "Select exact named discount and forecast curves. Under static_additive_forward_basis, add the initial forecast-minus-discount forward basis for each floating accrual to the nodewise lattice-implied discount forward."
+    - "Consume each leg's frequency, day count, calendar, business-day adjustment, stub, roll, business-day lags, index, compounding, gearing, and spread. Only simple floating compounding is admitted."
+    - "Resolve a provenance-complete named constant-parameter Hull-White set. Hidden mean-reversion/sigma defaults and Black-vol conversion are forbidden."
+    - "Uniform-grid date mapping is bounded approximation: require the authored model-time day count/calendar and positive lattice step count, preserve authored and adjusted dates, enforce the declared maximum mapping error, and reject distinct-date collisions instead of silently deduplicating them."
+    - "Cash/annuity settlement, stochastic basis, reset/payment convexity, term-structured Hull-White volatility, amortization, compounded or overnight coupons, Monte Carlo exercise, and production convergence/error control remain unsupported."
+
 bermudan_swaption_rate_lattice_composition:
   module: trellis.models.trees.algebra
   instruments: [bermudan_swaption]
@@ -649,10 +672,10 @@ bermudan_swaption_rate_lattice_composition:
     - "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, TERM_STRUCTURE_TARGET, build_lattice"
     - "from trellis.models.trees.algebra import LatticeLinearClaimSpec, LatticeContractSpec, value_on_lattice, LatticeControlSpec, price_on_lattice"
   notes:
-    - "Normalize live exercise dates, build the fixed-leg payment timeline, resolve market/model controls once, and map both schedules onto the calibrated generic one-factor lattice."
-    - "Represent fixed coupons and principal with LatticeLinearClaimSpec and LatticeContractSpec, call value_on_lattice(..., observation_steps=exercise_steps), use continuation_values for adapter-owned payer/receiver algebra, then attach LatticeControlSpec(objective=\"holder_max\") and finish with price_on_lattice(...)."
-    - "Post-cashflow values can double count a coupon coincident with exercise."
-    - "Product-level Bermudan pricing and contract-compilation wrappers remain compatibility/reference APIs and are not generated construction authority."
+    - "Legacy T04 continuation_values payer/receiver holder_max compatibility composition only. It represents the floating leg as par at exercise, builds one fixed schedule from the earliest exercise, and does not consume convention-complete dual-curve co-terminal tails."
+    - "Do not use this entry for requests that declare physical settlement, a separate forecast curve, independent fixed/floating conventions, explicit exercise-to-swap-start mapping, or a named strict Hull-White parameter source. Select physical_bermudan_swaption_lattice_composition instead."
+    - "Post-cashflow values can double count a coupon coincident with exercise; retained compatibility construction uses continuation_values."
+    - "Product-level Bermudan pricing and contract-compilation wrappers remain compatibility/reference APIs and are not authority for the strict physical route."
 
 bermudan_swaption_lower_bound_composition:
   module: trellis.models.rate_style_swaption

@@ -301,13 +301,14 @@ rate_tree:
   - callable_bond
   - puttable_bond
   - bermudan_swaption
+  - physical_bermudan_swaption
   version: canonical
   template: "## Cookbook: Rate Tree (backward induction)\nUse this pattern for instruments\
     \ with early exercise on interest rates\n(callable bonds, puttable bonds, Bermudan\
     \ swaptions).\n\nIMPORTANT: For plain Hull-White-style rate derivatives, use\n\
     `build_rate_lattice` which creates a mean-reverting SHORT-RATE tree.\nFor model-specific\
     \ calibrated trees such as BDT vs Hull-White comparisons,\nuse `build_generic_lattice(...,\
-    \ MODEL_REGISTRY[\"bdt\"|\"hull_white\"], ...)`.\nDo NOT use `BinomialTree.crr`\
+    \ MODEL_REGISTRY[\"bdt\"], ...)` or `MODEL_REGISTRY[\"hull_white\"]`.\nThe resolver owns `market_state.discount.zero_rate` sampling; do not replace its explicit model contract with an ad hoc rate or parameter.\nDo NOT use `BinomialTree.crr`\
     \ for interest-rate exercise problems.\n\nNever call a product-specific pricing\
     \ wrapper from a new generated route. For callable and puttable fixed income,\
     \ compose the public market-binding, event-contract, and generic lattice primitives:\n\n\
@@ -331,8 +332,16 @@ rate_tree:
     \        dt=lattice.dt, n_steps=lattice.n_steps,\n    )\n    tree_price = float(price_on_lattice(lattice, contract))\n\
     \    straight_price = present_value_fixed_coupon_bond(\n        market_state, spec, settlement=settlement\n\
     \    )\n    return min(tree_price, straight_price) if expected_control == \"issuer_min\" else max(tree_price, straight_price)\n\
-    ```\n\nThe lower-level lattice-control pattern below is useful when a different\
-    \ rate product does not have a shared event-contract compiler:\n\n```python\ndef evaluate(self,\
+    ```\n\nStrict physical Bermudan swaptions use the separate `physical_bermudan_swaption_lattice`\
+    \ composition. It requires exact named discount and forecast curves, an exact named\
+    \ provenance-complete Hull-White parameter set, every fixed/floating convention and\
+    \ lag, explicit exercise-to-swap-start pairs, an authored lattice step count, and a\
+    \ date-mapping tolerance. Compile with `compile_physical_bermudan_swap_tail_spec(...)`,\
+    \ build the calibrated lattice, then call `price_physical_bermudan_swaption_lattice(...)`.\
+    \ Never substitute the legacy Bermudan helper, a Black volatility conversion, or a\
+    \ European lower bound.\n\nThe lower-level lattice-control pattern below is only a\
+    \ legacy compatibility illustration for other bounded rate products. It is not an\
+    \ admissible physical Bermudan recipe:\n\n```python\ndef evaluate(self,\
     \ market_state):\n    from trellis.core.date_utils import (\n        build_exercise_timeline_from_dates,\n\
     \        build_payment_timeline,\n        year_fraction,\n    )\n    from trellis.models.trees.control\
     \ import (\n        lattice_step_from_time,\n        lattice_steps_from_timeline,\n\
@@ -340,16 +349,7 @@ rate_tree:
     \ import (\n        build_generic_lattice,\n        build_rate_lattice,\n    \
     \    lattice_backward_induction,\n    )\n    from trellis.models.trees.models\
     \ import MODEL_REGISTRY\n\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
-    \ spec.end_date, spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    r0\
-    \ = float(market_state.discount.zero_rate(max(T / 2, 1e-6)))\n    black_vol =\
-    \ float(market_state.vol_surface.black_vol(max(T / 2, 1e-6), r0))\n    sigma_hw\
-    \ = black_vol * max(r0, 1e-6)\n    mean_reversion = 0.1\n\n    n_steps = min(200,\
-    \ max(50, int(T * 50)))\n    # Hull-White helper route\n    lattice = build_rate_lattice(\n\
-    \        r0, sigma_hw, mean_reversion, T, n_steps,\n        discount_curve=market_state.discount,\n\
-    \    )\n    # BDT / explicit model-comparison route\n    # model = MODEL_REGISTRY[\"\
-    bdt\"]  # or MODEL_REGISTRY[\"hull_white\"]\n    # lattice = build_generic_lattice(\n\
-    \    #     model, r0=r0, sigma=black_vol, a=0.05, T=T, n_steps=n_steps,\n    #\
-    \     discount_curve=market_state.discount,\n    # )\n\n    payment_timeline =\
+    \ spec.end_date, spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    # Bind model parameters and grid controls from an explicit route contract.\n    # Do not infer Hull-White sigma from Black vol or insert default mean reversion.\n    resolved = resolve_short_rate_lattice_inputs(\n        market_state, horizon=T, model=spec.lattice_model,\n        mean_reversion=spec.mean_reversion, sigma=spec.sigma,\n        n_steps=spec.lattice_steps,\n    )\n    lattice = build_rate_lattice(\n        resolved.r0, resolved.sigma, resolved.mean_reversion,\n        resolved.horizon, resolved.n_steps, discount_curve=market_state.discount,\n    )\n\n    payment_timeline =\
     \ build_payment_timeline(\n        spec.start_date,\n        spec.end_date,\n\
     \        spec.frequency,\n        day_count=spec.day_count,\n        time_origin=market_state.settlement,\n\
     \        label=\"coupon_timeline\",\n    )\n    exercise_timeline = build_exercise_timeline_from_dates(\n\

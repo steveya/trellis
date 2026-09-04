@@ -57,6 +57,27 @@ _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
     "trellis.models.credit_default_swap": frozenset(),
     "trellis.models.zcb_option": frozenset(),
     "trellis.models.zcb_option_tree": frozenset(),
+    "trellis.models.hull_white_parameters": frozenset(
+        {
+            "ResolvedHullWhiteParameterSet",
+            "resolve_named_hull_white_parameter_set",
+        }
+    ),
+    "trellis.models.rate_swap_tail": frozenset(
+        {
+            "ExerciseSwapStart",
+            "FixedLegConvention",
+            "FloatingLegConvention",
+            "NamedRateCurve",
+            "PhysicalBermudanSwapTailSpec",
+            "build_bermudan_swaption_exercise_values",
+            "compile_physical_bermudan_swap_tail_spec",
+            "map_swap_tail_dates_to_lattice",
+            "observe_conditional_discount_bonds",
+            "price_physical_bermudan_swaption_lattice",
+            "resolve_co_terminal_swap_tails",
+        }
+    ),
     "trellis.models.resolution.short_rate_claims": frozenset(
         {
             "ResolvedDiscountBondClaim",
@@ -724,6 +745,8 @@ from trellis.models.loss_layers import bounded_layer_loss_fraction, homogeneous_
 
 ### Models — Trees
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs
+from trellis.models.hull_white_parameters import ResolvedHullWhiteParameterSet, resolve_named_hull_white_parameter_set
+from trellis.models.rate_swap_tail import ExerciseSwapStart, FixedLegConvention, FloatingLegConvention, NamedRateCurve, PhysicalBermudanSwapTailSpec, build_bermudan_swaption_exercise_values, compile_physical_bermudan_swap_tail_spec, map_swap_tail_dates_to_lattice, observe_conditional_discount_bonds, price_physical_bermudan_swaption_lattice, resolve_co_terminal_swap_tails
 from trellis.models.rate_style_swaption import resolve_swaption_curve_basis_spread
 from trellis.models.short_rate_fixed_income import build_embedded_fixed_income_event_timeline, compile_embedded_fixed_income_lattice_contract_spec, present_value_fixed_coupon_bond, settlement_date_for_fixed_income_claim
 from trellis.models.short_rate_lattice import ResolvedShortRateLatticeInputs, resolve_short_rate_lattice_inputs

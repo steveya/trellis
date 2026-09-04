@@ -6847,6 +6847,129 @@ def _deterministic_exact_binding_evaluate_body(
         )
         if variance_swap_body is not None:
             return variance_swap_body
+    strict_physical_bermudan_refs = {
+        "trellis.models.hull_white_parameters.resolve_named_hull_white_parameter_set",
+        "trellis.models.rate_swap_tail.PhysicalBermudanSwapTailSpec",
+        "trellis.models.rate_swap_tail.compile_physical_bermudan_swap_tail_spec",
+        "trellis.models.rate_swap_tail.NamedRateCurve",
+        "trellis.models.rate_swap_tail.resolve_co_terminal_swap_tails",
+        "trellis.models.rate_swap_tail.price_physical_bermudan_swaption_lattice",
+        "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY",
+        "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH",
+        "trellis.models.trees.algebra.TERM_STRUCTURE_TARGET",
+        "trellis.models.trees.algebra.build_lattice",
+        "trellis.models.trees.models.MODEL_REGISTRY",
+    }
+    if (
+        instrument_type == "physical_bermudan_swaption"
+        and primitive_route == "physical_bermudan_swaption_lattice"
+        and strict_physical_bermudan_refs.issubset(refs)
+    ):
+        return textwrap.dedent(
+            """\
+            selected_curve_names = market_state.selected_curve_names
+            if not isinstance(selected_curve_names, dict):
+                raise ValueError(
+                    "Physical Bermudan swaption pricing requires selected_curve_names"
+                )
+            if selected_curve_names.get("discount_curve") != spec.discount_curve_id:
+                raise ValueError(
+                    "Physical Bermudan swaption discount_curve_id must exactly match "
+                    "market_state.selected_curve_names['discount_curve']"
+                )
+            if selected_curve_names.get("forecast_curve") != spec.forecast_curve_id:
+                raise ValueError(
+                    "Physical Bermudan swaption forecast_curve_id must exactly match "
+                    "market_state.selected_curve_names['forecast_curve']"
+                )
+            if market_state.discount is None:
+                raise ValueError(
+                    "Physical Bermudan swaption pricing requires the selected discount curve"
+                )
+            forecast_curves = market_state.forecast_curves
+            if not isinstance(forecast_curves, dict) or spec.forecast_curve_id not in forecast_curves:
+                raise ValueError(
+                    "Physical Bermudan swaption forecast_curve_id must identify an exact "
+                    "market_state.forecast_curves entry"
+                )
+
+            valuation_date = market_state.settlement or market_state.as_of
+            lattice_date_tolerance_days = spec.lattice_date_tolerance_days
+            if (
+                isinstance(lattice_date_tolerance_days, bool)
+                or not isinstance(lattice_date_tolerance_days, int)
+                or lattice_date_tolerance_days < 0
+            ):
+                raise ValueError(
+                    "Physical Bermudan swaption lattice_date_tolerance_days must be a non-negative integer"
+                )
+            contract = compile_physical_bermudan_swap_tail_spec(
+                spec,
+                valuation_date=valuation_date,
+            )
+            parameters = resolve_named_hull_white_parameter_set(
+                market_state,
+                parameter_set_name=spec.hull_white_parameter_source,
+            )
+            discount_curve = NamedRateCurve(
+                name=spec.discount_curve_id,
+                curve=market_state.discount,
+            )
+            forecast_curve = NamedRateCurve(
+                name=spec.forecast_curve_id,
+                curve=forecast_curves[spec.forecast_curve_id],
+            )
+            resolved_tails = resolve_co_terminal_swap_tails(
+                contract,
+                discount_curve=discount_curve,
+                forecast_curve=forecast_curve,
+            )
+            latest_event_date = max(
+                period.payment_date
+                for tail in resolved_tails.tails
+                for period in tail.fixed_periods + tail.floating_periods
+            )
+            horizon = year_fraction(
+                valuation_date,
+                latest_event_date,
+                contract.model_day_count,
+                calendar=contract.model_time_calendar,
+            )
+            lattice_steps = spec.lattice_steps
+            if isinstance(lattice_steps, bool) or not isinstance(lattice_steps, int) or lattice_steps <= 0:
+                raise ValueError(
+                    "Physical Bermudan swaption lattice_steps must be a positive integer"
+                )
+            if horizon <= 0.0 or not isfinite(float(horizon)):
+                raise ValueError(
+                    "Physical Bermudan swaption lattice horizon must be finite and positive"
+                )
+            first_step_time = float(horizon) / lattice_steps
+            first_step_discount = float(market_state.discount.discount(first_step_time))
+            if first_step_discount <= 0.0 or not isfinite(first_step_discount):
+                raise ValueError(
+                    "Physical Bermudan swaption discount curve returned an invalid first-step factor"
+                )
+            initial_short_rate = -log(first_step_discount) / first_step_time
+            lattice = build_lattice(
+                BINOMIAL_1F_TOPOLOGY,
+                UNIFORM_ADDITIVE_MESH,
+                MODEL_REGISTRY["hull_white"],
+                calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+                r0=initial_short_rate,
+                sigma=parameters.sigma,
+                a=parameters.mean_reversion,
+                T=float(horizon),
+                n_steps=lattice_steps,
+            )
+            return price_physical_bermudan_swaption_lattice(
+                lattice,
+                contract,
+                discount_curve=discount_curve,
+                forecast_curve=forecast_curve,
+            )
+            """
+        ).rstrip()
     if (
         instrument_type in {"swaption", "bermudan_swaption"}
         and primitive_route == "exercise_lattice"
@@ -8539,6 +8662,10 @@ def _deterministic_exact_binding_import_lines(
         imports.append("from math import exp")
     if "sqrt(" in body:
         imports.append("from math import sqrt")
+    if "log(" in body:
+        imports.append("from math import log")
+    if "isfinite(" in body:
+        imports.append("from math import isfinite")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
     if "resolve_short_rate_lattice_inputs(" in body:
@@ -8580,6 +8707,20 @@ def _deterministic_exact_binding_import_lines(
         imports.append(
             "from trellis.models.rate_style_swaption import "
             "resolve_swaption_curve_basis_spread"
+        )
+    if "compile_physical_bermudan_swap_tail_spec(" in body:
+        imports.append(
+            "from trellis.models.rate_swap_tail import (\n"
+            "    NamedRateCurve,\n"
+            "    compile_physical_bermudan_swap_tail_spec,\n"
+            "    price_physical_bermudan_swaption_lattice,\n"
+            "    resolve_co_terminal_swap_tails,\n"
+            ")"
+        )
+    if "resolve_named_hull_white_parameter_set(" in body:
+        imports.append(
+            "from trellis.models.hull_white_parameters import "
+            "resolve_named_hull_white_parameter_set"
         )
     if "BermudanSwaptionTreeSpec(" in body:
         imports.append(

@@ -116,6 +116,22 @@ def test_schedule_convention_symbols_required_by_generic_composition_are_admitte
     assert is_valid_import("trellis.conventions.schedule", "StubType")
 
 
+def test_hull_white_codegen_surface_exposes_only_strict_named_parameter_resolution():
+    module = "trellis.models.hull_white_parameters"
+
+    assert set(list_module_exports(module)) == {
+        "ResolvedHullWhiteParameterSet",
+        "resolve_named_hull_white_parameter_set",
+    }
+    for permissive_symbol in (
+        "build_hull_white_parameter_payload",
+        "extract_hull_white_parameter_payload",
+        "resolve_hull_white_mean_reversion",
+        "resolve_hull_white_parameters",
+    ):
+        assert not is_valid_import(module, permissive_symbol)
+
+
 def test_codegen_registry_limits_conventions_to_explicit_composition_modules():
     convention_modules = {
         module

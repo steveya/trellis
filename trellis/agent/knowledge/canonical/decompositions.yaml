@@ -138,6 +138,33 @@
   reasoning: "Bermudan exercise dates require backward induction on a rate tree."
   learned: false
 
+- instrument: physical_bermudan_swaption
+  features: [physical_settlement, co_terminal_swap_tails, dual_curve_projection, strict_conventions, named_hull_white_parameters, bermudan_exercise]
+  method: rate_tree
+  method_modules: [trellis.models.rate_swap_tail, trellis.models.hull_white_parameters, trellis.models.trees.lattice]
+  required_market_data: [discount_curve, forward_curve, model_parameters]
+  modeling_requirements:
+    - >-
+      CONTRACT: Every live exercise date must map explicitly to one swap-start date,
+      every mapped swap tail must end at the common authored maturity, and settlement
+      must be physical.
+    - >-
+      CURVES: Discounting and floating-rate projection must use the exact named curves;
+      never replace the forecast curve with the discount curve or infer either name.
+    - >-
+      CONVENTIONS: Build each fixed and floating tail from its authored frequency,
+      day count, calendar, business-day adjustment, stub, roll, fixing/reset/payment
+      lags, index, compounding, gearing, and spread.
+    - >-
+      MODEL: Resolve the exact named provenance-complete Hull-White parameter set;
+      do not default mean reversion or translate Black volatility into short-rate sigma.
+    - >-
+      GRID: Use the authored model-time day count/calendar and positive lattice step
+      count, preserve authored and adjusted dates, require unique event-to-step mapping,
+      and fail when any event exceeds the declared lattice-date tolerance.
+  reasoning: "Physical co-terminal Bermudan swap tails require convention-aware dual-curve exercise values on a calibrated short-rate lattice."
+  learned: false
+
 # ---------------------------------------------------------------------------
 # Monte Carlo instruments
 # ---------------------------------------------------------------------------

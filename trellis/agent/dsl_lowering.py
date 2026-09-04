@@ -454,6 +454,13 @@ def _build_expr_for_route(
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
     """Build the semantic DSL fragment for one resolved route."""
     market_signature = _market_signature(contract)
+    if route_id == "physical_bermudan_swaption_lattice":
+        return _build_physical_bermudan_swaption_lattice_expr(
+            route_id=route_id,
+            binding_id=binding_id,
+            market_signature=market_signature,
+            bindings=bindings,
+        )
     if (
         route_id == "rate_tree_backward_induction"
         and getattr(contract.product, "payoff_family", "") == "swaption"
@@ -543,6 +550,153 @@ def _build_expr_for_route(
         ),
     )
     return helper_atom, ()
+
+
+def _build_physical_bermudan_swaption_lattice_expr(
+    *,
+    route_id: str,
+    binding_id: str,
+    market_signature: ContractSignature,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Lower the strict physical Bermudan route as an explicit composition."""
+    required = (
+        ("market_binding", "resolve_named_hull_white_parameter_set"),
+        ("contract_spec", "PhysicalBermudanSwapTailSpec"),
+        ("contract_compiler", "compile_physical_bermudan_swap_tail_spec"),
+        ("curve_binding", "NamedRateCurve"),
+        ("schedule_builder", "resolve_co_terminal_swap_tails"),
+        ("model_registry", "MODEL_REGISTRY"),
+        ("topology", "BINOMIAL_1F_TOPOLOGY"),
+        ("mesh", "UNIFORM_ADDITIVE_MESH"),
+        ("calibration_target", "TERM_STRUCTURE_TARGET"),
+        ("lattice_builder", "build_lattice"),
+        ("pricing_kernel", "price_physical_bermudan_swaption_lattice"),
+    )
+    by_role_and_symbol = {
+        (binding.role, binding.symbol): binding
+        for binding in bindings
+        if binding.required
+    }
+    missing = tuple(
+        (role, symbol)
+        for role, symbol in required
+        if (role, symbol) not in by_role_and_symbol
+    )
+    if missing:
+        role, symbol = missing[0]
+        return None, (
+            _missing_primitive_message(route_id, binding_id, role, symbol),
+        )
+
+    ports = (
+        market_signature.inputs,
+        ("named_hull_white_parameters:state", *market_signature.inputs),
+        ("authored_physical_swap_tail_spec:state", "named_hull_white_parameters:state"),
+        ("physical_swap_tail_contract:state", "named_hull_white_parameters:state"),
+        (
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+            "named_hull_white_parameters:state",
+        ),
+        (
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+            "named_hull_white_parameters:state",
+        ),
+        (
+            "hull_white_model:state",
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+        ),
+        (
+            "binomial_topology:state",
+            "hull_white_model:state",
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+        ),
+        (
+            "uniform_additive_mesh:state",
+            "binomial_topology:state",
+            "hull_white_model:state",
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+        ),
+        (
+            "term_structure_target:state",
+            "uniform_additive_mesh:state",
+            "binomial_topology:state",
+            "hull_white_model:state",
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+        ),
+        (
+            "calibrated_hull_white_lattice:state",
+            "resolved_co_terminal_swap_tails:state",
+            "named_dual_curves:state",
+            "physical_swap_tail_contract:state",
+        ),
+    )
+    stage_descriptions = (
+        "Bind the exact named provenance-complete Hull-White parameter set.",
+        "Declare the fully authored physical Bermudan swap-tail contract.",
+        "Compile every authored schedule, convention, exercise, and lattice-policy field.",
+        "Bind separate named discount and forecast curves without fallback.",
+        "Resolve every convention-complete co-terminal fixed and floating swap tail.",
+        "Select the admitted Hull-White model from the checked-in registry.",
+        "Select the admitted one-factor binomial topology.",
+        "Select the admitted uniform additive mesh.",
+        "Bind calibration to the exact named discount term structure.",
+        "Build the authored-resolution Hull-White lattice against the named discount curve.",
+    )
+    prefix = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, role),
+            primitive_ref=by_role_and_symbol[(role, symbol)].primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=ports[index],
+                outputs=ports[index + 1],
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for index, ((role, symbol), description) in enumerate(
+            zip(required[:-1], stage_descriptions, strict=True)
+        )
+    )
+    choice_signature = ContractSignature(
+        inputs=ports[-1],
+        outputs=("price:scalar",),
+        timeline_roles=market_signature.timeline_roles | {TimelineRole.EXERCISE},
+        market_data_requirements=market_signature.market_data_requirements,
+    )
+    holder_choice = ChoiceExpr(
+        style=ControlStyle.HOLDER_MAX,
+        branches=(
+            ContractAtom(
+                atom_id=f"{route_id}:continuation",
+                signature=choice_signature,
+                description="Continue the option rollback without exercising.",
+            ),
+            ContractAtom(
+                atom_id=f"{route_id}:exercise_now",
+                primitive_ref=by_role_and_symbol[required[-1]].primitive_ref,
+                signature=choice_signature,
+                description=(
+                    "Rollback co-terminal physical swap-tail exercise values under "
+                    "explicit holder-max control without a European fallback."
+                ),
+            ),
+        ),
+        label="physical_bermudan_swaption_holder_max",
+    )
+    return ThenExpr(terms=(*prefix, holder_choice)), ()
 
 
 def _build_european_swaption_rate_lattice_expr(
