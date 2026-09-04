@@ -24,6 +24,7 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 
 from trellis.agent.config import load_env
 from trellis.agent.evals import classify_task_result, summarize_task_results
+from trellis.agent.task_manifest_validation import assert_executable_task_selection
 from trellis.agent.task_run_store import load_task_run_record
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
 from trellis.cli_paths import resolve_repo_path
@@ -286,6 +287,7 @@ def run_analytical_pricing_stress_set(
     report_md_file: Path,
 ) -> dict[str, Any]:
     tasks = _load_tasks_by_ids(task_ids)
+    assert_executable_task_selection(tasks, root=ROOT)
     task_map = {task["id"]: task for task in tasks}
 
     market_state = build_market_state()

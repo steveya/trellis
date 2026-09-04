@@ -1131,6 +1131,42 @@ def test_analytical_stress_defaults_exclude_governed_nonpricing_tasks():
     assert held_task_ids.isdisjoint(ANALYTICAL_PRICING_STRESS_TASK_IDS)
 
 
+def test_analytical_stress_explicit_holds_stop_before_market_or_build(
+    monkeypatch,
+    tmp_path,
+):
+    from scripts import run_analytical_pricing_stress_set as stress_runner
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        stress_runner,
+        "build_market_state",
+        lambda: calls.append("market"),
+    )
+    monkeypatch.setattr(
+        stress_runner,
+        "run_task",
+        lambda *args, **kwargs: calls.append("build"),
+    )
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        stress_runner.run_analytical_pricing_stress_set(
+            model="test-model",
+            validation="standard",
+            force_rebuild=False,
+            task_ids=["T03", "T83", "T85"],
+            output_file=tmp_path / "results.json",
+            report_json_file=tmp_path / "report.json",
+            report_md_file=tmp_path / "report.md",
+        )
+
+    issues = exc_info.value.report.blocking_issues
+    assert {issue.code for issue in issues} == {"legacy.non_executable_disposition"}
+    assert {issue.task_id for issue in issues} == {"T03", "T83", "T85"}
+    assert calls == []
+
+
 def test_task_loader_overwrites_manifest_provenance_claims(tmp_path):
     from trellis.agent.task_manifests import load_task_manifest
 
