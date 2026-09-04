@@ -2572,6 +2572,46 @@ def _align_validation_market_payload_to_spec(
         model_parameters[correlation_key] = float(corr)
         aligned["model_parameters"] = model_parameters
 
+    discount_curve_id = str(
+        getattr(spec, "discount_curve_id", None) or ""
+    ).strip()
+    forecast_curve_id = str(
+        getattr(spec, "forecast_curve_id", None) or ""
+    ).strip()
+    if discount_curve_id or forecast_curve_id:
+        selected_curve_names = dict(aligned.get("selected_curve_names") or {})
+        if discount_curve_id:
+            selected_curve_names["discount_curve"] = discount_curve_id
+        if forecast_curve_id:
+            selected_curve_names["forecast_curve"] = forecast_curve_id
+            from trellis.curves.yield_curve import YieldCurve
+
+            forecast_curves = dict(aligned.get("forecast_curves") or {})
+            forecast_curves.setdefault(
+                forecast_curve_id,
+                YieldCurve.flat(max(float(rate) - 0.01, 0.001)),
+            )
+            aligned["forecast_curves"] = forecast_curves
+        aligned["selected_curve_names"] = selected_curve_names
+
+    hull_white_parameter_source = str(
+        getattr(spec, "hull_white_parameter_source", None) or ""
+    ).strip()
+    if hull_white_parameter_source:
+        model_parameter_sets = dict(aligned.get("model_parameter_sets") or {})
+        model_parameter_sets.setdefault(
+            hull_white_parameter_source,
+            {
+                "parameter_set_name": hull_white_parameter_source,
+                "model_family": "hull_white",
+                "mean_reversion": 0.05,
+                "sigma": 0.01,
+                "source_kind": "observed",
+                "calibration_source": "synthetic_build_validation",
+            },
+        )
+        aligned["model_parameter_sets"] = model_parameter_sets
+
     return aligned
 
 
@@ -6868,7 +6908,7 @@ def _deterministic_exact_binding_evaluate_body(
         return textwrap.dedent(
             """\
             selected_curve_names = market_state.selected_curve_names
-            if not isinstance(selected_curve_names, dict):
+            if not isinstance(selected_curve_names, Mapping):
                 raise ValueError(
                     "Physical Bermudan swaption pricing requires selected_curve_names"
                 )
@@ -6887,7 +6927,7 @@ def _deterministic_exact_binding_evaluate_body(
                     "Physical Bermudan swaption pricing requires the selected discount curve"
                 )
             forecast_curves = market_state.forecast_curves
-            if not isinstance(forecast_curves, dict) or spec.forecast_curve_id not in forecast_curves:
+            if not isinstance(forecast_curves, Mapping) or spec.forecast_curve_id not in forecast_curves:
                 raise ValueError(
                     "Physical Bermudan swaption forecast_curve_id must identify an exact "
                     "market_state.forecast_curves entry"
@@ -8656,6 +8696,8 @@ def _deterministic_exact_binding_import_lines(
     ordinary generated modules.
     """
     imports: list[str] = []
+    if "Mapping" in body:
+        imports.append("from collections.abc import Mapping")
     if "replace(spec" in body:
         imports.append("from dataclasses import replace")
     if "exp(" in body:

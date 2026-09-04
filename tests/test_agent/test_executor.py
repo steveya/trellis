@@ -1774,6 +1774,7 @@ def test_deterministic_physical_bermudan_swaption_uses_strict_dual_curve_route()
     assert "price_physical_bermudan_swaption_lattice(" in generated.code
     assert "selected_curve_names" in generated.code
     assert "forecast_curves" in generated.code
+    assert "from collections.abc import Mapping" in generated.code
     assert "spec.lattice_steps" in generated.code
     assert "spec.lattice_date_tolerance_days" in generated.code
     assert "bermudan_swaption_tree" not in generated.code
@@ -1849,6 +1850,13 @@ def test_deterministic_physical_bermudan_swaption_uses_strict_dual_curve_route()
     price = namespace["PhysicalBermudanSwaptionPayoff"](spec).evaluate(market_state)
 
     assert price == pytest.approx(6187.347581908174)
+    from trellis.engine.payoff_pricer import price_payoff
+
+    proxied_price = price_payoff(
+        namespace["PhysicalBermudanSwaptionPayoff"](spec),
+        market_state,
+    )
+    assert proxied_price == pytest.approx(price)
     from dataclasses import replace as dataclass_replace
 
     higher_volatility = dataclass_replace(
@@ -6395,6 +6403,55 @@ def test_validation_market_payload_preserves_exact_quanto_spec_identities():
     assert aligned["model_parameters"]["sx5e_eurusd"] == pytest.approx(0.35)
     assert resolved.spot == pytest.approx(100.0)
     assert resolved.corr == pytest.approx(0.35)
+
+
+def test_validation_market_payload_seeds_strict_physical_bermudan_named_inputs():
+    from datetime import date as _date
+
+    from trellis.agent.executor import _align_validation_market_payload_to_spec
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.hull_white_parameters import (
+        resolve_named_hull_white_parameter_set,
+    )
+
+    discount = YieldCurve.flat(0.05)
+    spec = SimpleNamespace(
+        discount_curve_id="USD-OIS",
+        forecast_curve_id="USD-SOFR-3M",
+        hull_white_parameter_source="USD-HW-VALIDATION",
+    )
+    payload = {
+        "as_of": _date(2024, 11, 15),
+        "settlement": _date(2024, 11, 15),
+        "discount": discount,
+        "forecast_curves": {"EUR-DISC": YieldCurve.flat(0.03)},
+        "model_parameters": {"quanto_correlation": 0.35},
+    }
+
+    aligned = _align_validation_market_payload_to_spec(
+        payload,
+        spec,
+        rate=0.05,
+        vol=0.20,
+        corr=0.35,
+    )
+    market_state = MarketState(**aligned)
+    parameters = resolve_named_hull_white_parameter_set(
+        market_state,
+        parameter_set_name="USD-HW-VALIDATION",
+    )
+
+    assert aligned["selected_curve_names"] == {
+        "discount_curve": "USD-OIS",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+    assert "USD-SOFR-3M" in aligned["forecast_curves"]
+    assert parameters.parameter_set_name == "USD-HW-VALIDATION"
+    assert parameters.mean_reversion == pytest.approx(0.05)
+    assert parameters.sigma == pytest.approx(0.01)
+    assert parameters.source_kind == "observed"
+    assert parameters.calibration_source == "synthetic_build_validation"
 
 
 def test_generated_quanto_qmc_uses_seeded_sobol_joint_factor_shocks():
