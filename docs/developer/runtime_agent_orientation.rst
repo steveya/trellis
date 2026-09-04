@@ -145,7 +145,8 @@ contracts.
 
 The ``fixed_lookback_analytical_composition`` card is the corresponding
 builder-only analytical hot start. It selects scalar market resolution, exact
-time, option normalization, discounting, and the univariate Gaussian CDF. It
+time, option normalization, discounting, the univariate Gaussian CDF, and its
+log-CDF companion for stable scaled-tail products at large carry weights. It
 does not inherit the bivariate probability or scalar-root imports from
 ``analytical_gaussian_composition``. The card states that generated code owns
 the Conze-Viswanathan call/put formula, historical and runtime extreme

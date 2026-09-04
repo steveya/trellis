@@ -407,9 +407,12 @@ product pricer. It resolves runtime spot, maturity, rate, dividend carry,
 strike-coordinate Black volatility, and discounting with
 ``resolve_scalar_diffusion_market_inputs(...)``; normalizes call or put
 semantics; and evaluates the fixed-strike continuous-lookback formula with
-``standard_normal_cdf(...)``. Generated code owns the running maximum/minimum
-branches, expiry settlement, and notional. When rate minus dividend carry is
-zero, it uses the analytic formula limit instead of perturbing market data.
+``standard_normal_cdf(...)``. Scaled Gaussian tail terms are evaluated through
+``standard_normal_logcdf(...)`` so low-volatility, nonzero-carry requests do
+not lose a material correction term. Generated code owns the running
+maximum/minimum branches, expiry settlement, and notional. When rate minus
+dividend carry is zero, it uses the analytic formula limit instead of
+perturbing market data.
 
 The observed maximum for a call must be at least the contract spot; the
 observed minimum for a put must be at most the contract spot. A runtime spot
@@ -435,6 +438,21 @@ Carlo engine convention and is validated internally; the scalar
 retained structured helper is statistical rather than a same-seed path replay.
 At least two paths are required so the generated route always has meaningful
 estimator evidence.
+
+The legacy comparison requests ``T30`` and ``T96`` bind this route to the
+``equity_barrier_smile`` scenario and make their statistical controls part of
+the request: 80,000 paths, 96 time steps, and seed 42. They compare the Monte
+Carlo PV to the fixed-strike continuous analytical PV with a 1.25% relative
+tolerance. Reproducing those proof results therefore requires preserving the
+authored controls; changing path count, time grid, or seed defines different
+numerical evidence.
+The analytical target is named ``conze_viswanathan_analytical`` to match the
+fixed-strike formula actually exercised by the library.
+For typed workflows, ``make_lookback_option_contract(...)`` constructs this
+same bounded semantic contract and ``compile_semantic_contract(...)`` accepts
+``analytical`` and ``monte_carlo`` as its two method surfaces. The factory
+requires one underlier, an expiry schedule, and a finite positive running
+extreme; compilation does not infer unsupported lookback variants.
 
 Generated code applies strike, notional, expiry settlement, discounting, and
 estimator checks. This lane requires ``lookback_type="fixed_strike"``,

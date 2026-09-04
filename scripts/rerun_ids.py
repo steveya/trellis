@@ -61,7 +61,7 @@ args = parser.parse_args()
 ids = set(args.ids)
 all_tasks = load_tasks(status=None)
 tasks = [task for task in all_tasks if task["id"] in ids]
-assert_executable_task_selection(tasks)
+assert_executable_task_selection(tasks, root=ROOT)
 ms = build_market_state()
 output_file = ROOT / f"task_results_rerun_{datetime.now().strftime('%H%M')}.json"
 

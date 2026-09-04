@@ -164,7 +164,9 @@ def audit_task_manifests(
                 blocking.extend(_validate_framework_task(manifest_name, task, path))
             elif manifest_name == LEGACY_TASKS_MANIFEST:
                 legacy_tasks.append(task)
-                legacy.extend(_validate_legacy_task(manifest_name, task, path))
+                legacy.extend(
+                    _validate_legacy_task(manifest_name, task, path, root=root)
+                )
 
     for task_id, locations in located_ids.items():
         if len(locations) < 2:
@@ -232,6 +234,8 @@ def assert_valid_task_manifests(
 
 def assert_executable_task_selection(
     tasks: Sequence[Mapping[str, Any]],
+    *,
+    root: Path | None = None,
 ) -> None:
     """Admit validated pricing/block rows and reject incomplete legacy selections."""
     issues: list[TaskManifestIssue] = []
@@ -240,7 +244,14 @@ def assert_executable_task_selection(
             continue
         path = f"selected_tasks[{index}]"
         task_issues = _validate_common(LEGACY_TASKS_MANIFEST, task, path)
-        task_issues.extend(_validate_legacy_task(LEGACY_TASKS_MANIFEST, task, path))
+        task_issues.extend(
+            _validate_legacy_task(
+                LEGACY_TASKS_MANIFEST,
+                task,
+                path,
+                root=root,
+            )
+        )
         disposition = _text(task.get("task_disposition"))
         if (
             disposition in _NON_PRICING_LEGACY_DISPOSITIONS
@@ -1061,6 +1072,8 @@ def _validate_legacy_task(
     manifest_name: str,
     task: Mapping[str, Any],
     path: str,
+    *,
+    root: Path | None = None,
 ) -> list[TaskManifestIssue]:
     issues: list[TaskManifestIssue] = []
     task_id = _text(task.get("id"))
@@ -1076,6 +1089,16 @@ def _validate_legacy_task(
             )
         )
         disposition = "executable_pricing"
+
+    if task_id in {"T30", "T96"}:
+        issues.extend(
+            _validate_legacy_lookback_comparison_contract(
+                manifest_name,
+                task,
+                path,
+                root=root,
+            )
+        )
 
     if disposition == "expected_honest_block":
         issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
@@ -1148,6 +1171,163 @@ def _validate_legacy_task(
             )
         )
     return issues
+
+
+def _validate_legacy_lookback_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+    *,
+    root: Path | None = None,
+) -> list[TaskManifestIssue]:
+    """Keep the two executable legacy lookback proofs on one bounded contract."""
+    contract = task.get("benchmark_contract")
+    cross_validate = task.get("cross_validate")
+    contract = contract if isinstance(contract, Mapping) else {}
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+    market = task.get("market")
+    canonical_market_matches = market is None
+    if isinstance(market, Mapping):
+        from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+        scenario_contracts = (
+            load_market_scenario_contracts()
+            if root is None
+            else load_market_scenario_contracts(root=root)
+        )
+        canonical = scenario_contracts.get("equity_barrier_smile")
+        if canonical is not None:
+            expected_market = {
+                "source": canonical.source,
+                "as_of": canonical.as_of.isoformat(),
+                **dict(canonical.selected_components),
+                "scenario_contract": canonical.to_payload(),
+                "scenario_digest": canonical.scenario_digest,
+                "scenario_schema_version": canonical.schema_version,
+                "scenario_constructor_kind": canonical.constructor_kind,
+            }
+            benchmark_inputs = canonical.financepy_inputs()
+            if benchmark_inputs:
+                expected_market["benchmark_inputs"] = benchmark_inputs
+            canonical_market_matches = dict(market) == expected_market
+
+    expected_contract = {
+        "product": "lookback_option",
+        "notional": 1.0,
+        "spot": 100.0,
+        "strike": 100.0,
+        "option_type": "call",
+        "lookback_type": "fixed_strike",
+        "monitoring_style": "continuous",
+        "exercise_style": "european",
+        "day_count": "act/365",
+        "running_extreme": 100.0,
+        "expiry_years": 1.0,
+        "n_paths": 80_000,
+        "n_steps": 96,
+        "seed": 42,
+    }
+    expected_targets = {
+        "mc_lookback": {
+            "method": "monte_carlo",
+            "route_id": "monte_carlo_paths",
+            "route_family": "monte_carlo",
+            "validation_bundle_id": "monte_carlo:lookback_option",
+            "payoff_family": "lookback_option",
+            "exercise_style": "european",
+            "model_family": "equity_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "path_dependent",
+        },
+        "conze_viswanathan_analytical": {
+            "method": "analytical",
+            "route_id": "analytical_black76",
+            "route_family": "analytical",
+            "validation_bundle_id": "analytical:lookback_option",
+            "payoff_family": "lookback_option",
+            "exercise_style": "european",
+            "model_family": "equity_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "path_dependent",
+        },
+    }
+
+    construct = task.get("construct")
+    construct_methods = (
+        tuple(str(item).strip() for item in construct)
+        if _nonempty_string_sequence(construct)
+        else ()
+    )
+    internal_targets = cross_validate.get("internal")
+    valid = all(
+        (
+            _text(task.get("task_disposition")) == "executable_pricing",
+            _text(task.get("instrument_type")) == "lookback_option",
+            _text(task.get("market_scenario_id")) == "equity_barrier_smile",
+            canonical_market_matches,
+            "comparison_regime" not in task,
+            not any(
+                field in task
+                for field in (
+                    "expected_outcome",
+                    "expected_blocker_ids",
+                    "honest_block_contract",
+                )
+            ),
+            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            construct_methods == ("monte_carlo", "analytical"),
+            set(contract) == set(expected_contract),
+            all(contract.get(key) == value for key, value in expected_contract.items()),
+            set(cross_validate)
+            == {
+                "internal",
+                "reference_target",
+                "relations",
+                "tolerance_pct",
+                "target_contracts",
+                "external",
+            },
+            tuple(internal_targets or ())
+            == ("mc_lookback", "conze_viswanathan_analytical"),
+            _text(cross_validate.get("reference_target"))
+            == "conze_viswanathan_analytical",
+            cross_validate.get("relations") == {"mc_lookback": "within_tolerance"},
+            cross_validate.get("tolerance_pct") == 1.25,
+            set(targets) == set(expected_targets),
+            all(
+                isinstance(targets.get(target_id), Mapping)
+                and set(targets[target_id])
+                == {*expected, "variant_parameters"}
+                and all(
+                    targets[target_id].get(key) == value
+                    for key, value in expected.items()
+                )
+                for target_id, expected in expected_targets.items()
+            ),
+            isinstance(targets.get("mc_lookback"), Mapping)
+            and targets["mc_lookback"].get("variant_parameters")
+            == {
+                "process": "exact_gbm",
+                "extremum_sampling": "conditional_log_bridge",
+            },
+            isinstance(targets.get("conze_viswanathan_analytical"), Mapping)
+            and targets["conze_viswanathan_analytical"].get("variant_parameters")
+            == {"formula": "fixed_strike_continuous_lookback"},
+        )
+    )
+    if valid:
+        return []
+    return [
+        _issue(
+            manifest_name,
+            "legacy.lookback_invalid_contract",
+            "T30/T96 require the bounded fixed-strike continuous lookback comparison contract",
+            task_id=_text(task.get("id")),
+            path=path,
+        )
+    ]
 
 
 def _validate_legacy_expected_honest_block(

@@ -229,6 +229,52 @@ def _build_semantic_family_registry() -> MappingProxyType:
             ),
         ),
         _family_definition(
+            family_key="lookback_option",
+            semantic_id="lookback_option",
+            candidate_methods=("analytical", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=(
+                        "trellis.models.resolution.single_state_diffusion",
+                        "trellis.core.date_utils",
+                        "trellis.core.differentiable",
+                        "trellis.models.analytical.support",
+                        "trellis.models.analytical.support.probability",
+                    ),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_scalar_diffusion_market_inputs",
+                        "preserve_fixed_strike_continuous_extremum_semantics",
+                        "compose_conze_viswanathan_primitives",
+                        "apply_expiry_settlement_discount_and_notional_once",
+                    ),
+                    spec_schema_hints=("lookback_option",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.resolution.single_state_diffusion",
+                        "trellis.models.analytical.support",
+                        "trellis.models.monte_carlo.transition_state",
+                        "trellis.models.processes.gbm",
+                        "trellis.models.monte_carlo.engine",
+                        "trellis.models.monte_carlo.path_state",
+                        "trellis.core.differentiable",
+                    ),
+                    primitive_families=("monte_carlo_paths",),
+                    adapter_obligations=(
+                        "resolve_scalar_diffusion_market_inputs",
+                        "bind_conditional_bridge_running_extremum",
+                        "simulate_exact_gbm_with_state_aware_payoff",
+                        "apply_expiry_settlement_discount_and_notional_once",
+                    ),
+                    spec_schema_hints=("lookback_option",),
+                ),
+            ),
+        ),
+        _family_definition(
             family_key="american_option",
             semantic_id="american_option",
             candidate_methods=("rate_tree", "pde_solver", "monte_carlo"),
@@ -1730,7 +1776,7 @@ def _normalize_axis_token(value: object) -> str:
 def _infer_option_type(text: str, explicit: str | None = None) -> str:
     """Infer the canonical call/put side when a vanilla option request states it."""
     normalized_explicit = _normalize_axis_token(explicit)
-    if normalized_explicit in {"call", "put"}:
+    if normalized_explicit:
         return normalized_explicit
     lower = f" {str(text or '').lower()} "
     if re.search(r"\bput\b", lower):
@@ -1978,6 +2024,218 @@ def make_vanilla_option_contract(
             "compile_request_to_product_ir",
             "validate_vanilla_option_contract",
             "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=surface.spec_schema_hints,
+        description=description,
+    )
+
+
+def make_lookback_option_contract(
+    *,
+    description: str,
+    underliers: tuple[str, ...] | list[str],
+    observation_schedule: tuple[str, ...] | list[str],
+    running_extreme: float,
+    preferred_method: str = "analytical",
+    underlying_asset_class: str | None = None,
+    option_type: str | None = None,
+) -> SemanticContract:
+    """Construct the bounded fixed-strike continuous-lookback contract."""
+    underlier_names = _tuple(underliers)
+    schedule = _normalize_schedule(observation_schedule)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "lookback_option",
+        preferred_method=preferred_method,
+    )
+    if len(underlier_names) != 1:
+        raise ValueError("Lookback option contract requires exactly one underlier.")
+    if len(schedule) != 1:
+        raise ValueError("Lookback option contract requires exactly one expiry date.")
+    try:
+        date.fromisoformat(schedule[0])
+    except ValueError as exc:
+        raise ValueError(
+            "Lookback option contract requires a valid ISO expiry date."
+        ) from exc
+    resolved_running_extreme = float(running_extreme)
+    if not math.isfinite(resolved_running_extreme) or resolved_running_extreme <= 0.0:
+        raise ValueError("Lookback option running_extreme must be finite and positive.")
+    resolved_underlying_asset_class = _infer_underlying_asset_class(
+        description,
+        underliers=underlier_names,
+        explicit=underlying_asset_class,
+        default="equity",
+    )
+    resolved_option_type = _infer_option_type(description, option_type)
+
+    product = SemanticProductSemantics(
+        semantic_id="lookback_option",
+        semantic_version="c1.0",
+        instrument_class="lookback_option",
+        instrument_aliases=(
+            "lookback_option",
+            "fixed_strike_lookback",
+            "continuous_lookback",
+        ),
+        payoff_family="lookback_option",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(
+            asset_class=resolved_underlying_asset_class,
+            identifiers=underlier_names,
+        ),
+        option_type=resolved_option_type,
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+        ),
+        underlier_structure="single_underlier",
+        payoff_rule="fixed_strike_lookback_payoff",
+        settlement_rule="cash_settle_at_expiry",
+        payoff_traits=(
+            "lookback",
+            "fixed_strike",
+            "continuous_monitoring",
+            "discounting",
+            "vol_surface_dependence",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="underlier_spot_path",
+                observable_type="spot",
+                description=(
+                    "Continuously monitored underlier spot used to update the "
+                    "running maximum or minimum."
+                ),
+                source="underlier_spot",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="underlier_price",
+                kind="event_state",
+                description="Current underlier price along the pricing path.",
+                source_observables=("underlier_spot_path",),
+                tags=(),
+            ),
+            StateField(
+                field_name="running_extreme",
+                kind="contract_memory",
+                description="Running maximum for a call or minimum for a put.",
+                source_observables=("underlier_spot_path",),
+                tags=("pathwise_only",),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="expiry_cash_settlement",
+                settle_date_rule="cash_settle_at_expiry",
+                amount_expression="fixed_strike_lookback_payoff",
+                settlement_kind="cash",
+                trigger="exercise_if_positive_at_expiry",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "expire_worthless"),
+            description="European exercise decision at expiry.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        term_fields=_freeze_mapping(
+            {
+                "lookback_type": "fixed_strike",
+                "monitoring_style": "continuous",
+                "running_extreme": resolved_running_extreme,
+            }
+        ),
+        exercise_style="european",
+        path_dependence="path_dependent",
+        schedule_dependence=False,
+        state_dependence="path_dependent",
+        model_family="equity_diffusion",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="continuous_running_extremum",
+        maturity_settlement_rule="cash_settle_at_expiry",
+        constituents=underlier_names,
+        state_variables=("underlier_price", "running_extreme"),
+        event_transitions=(
+            "observe_underlier_spot",
+            "update_running_extreme",
+            "evaluate_fixed_strike_lookback_payoff",
+            "settle_at_expiry",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "observe_underlier_spot",
+                "update_running_extreme",
+                "evaluate_fixed_strike_lookback_payoff",
+                "settle_at_expiry",
+            ),
+            state_dependence="path_dependent",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Risk-free discount curve for expiry settlement.",
+            capability="discount_curve",
+            aliases=("discount", "discount_rate"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="underlier_spot",
+            description="Current spot level for the single underlier.",
+            capability="spot",
+            aliases=("spot", "underlier_spots", "underlier_price"),
+            connector_hint="Provide the current spot for the priced underlier.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="black_vol_surface",
+            description="Black volatility surface for the underlier.",
+            capability="black_vol_surface",
+            aliases=("vol_surface", "volatility_surface"),
+            connector_hint="Provide constant scalar Black volatility at expiry and strike.",
+            allowed_provenance=("observed",),
+        ),
+    )
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
+        bundle_hints=("lookback_option_contract",),
+        universal_checks=(
+            "single_underlier_present",
+            "expiry_date_present",
+            "running_extreme_positive",
+        ),
+        semantic_checks=(
+            "fixed_strike_semantics_preserved",
+            "continuous_running_extremum_preserved",
+            "settlement_occurs_at_expiry",
+        ),
+        comparison_targets=(normalized_method,),
+        reduction_cases=("fixed_strike_continuous_lookback",),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
+        proving_tasks=(
+            "validate_lookback_option_contract",
+            "compile_supported_lookback_method_surface",
         ),
         spec_schema_hints=surface.spec_schema_hints,
         description=description,
@@ -3864,6 +4122,39 @@ def _rebuild_vanilla_option_contract(
     return rebuilt
 
 
+def _rebuild_lookback_option_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Specialize a lookback method surface without rebuilding its economics."""
+    definition, surface, resolved_method = _resolve_registered_family_surface(
+        "lookback_option",
+        preferred_method=normalized_method,
+        exercise_style=contract.product.exercise_style,
+    )
+    return dataclasses.replace(
+        contract,
+        methods=dataclasses.replace(
+            contract.methods,
+            candidate_methods=definition.candidate_methods,
+            reference_methods=(resolved_method,),
+            production_methods=(resolved_method,),
+            preferred_method=resolved_method,
+        ),
+        validation=dataclasses.replace(
+            contract.validation,
+            comparison_targets=(resolved_method,),
+        ),
+        blueprint=dataclasses.replace(
+            contract.blueprint,
+            target_modules=surface.target_modules,
+            primitive_families=surface.primitive_families,
+            adapter_obligations=surface.adapter_obligations,
+            spec_schema_hints=surface.spec_schema_hints,
+        ),
+    )
+
+
 def _rebuild_american_option_contract(
     contract: SemanticContract,
     normalized_method: str,
@@ -4024,6 +4315,7 @@ _SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], Se
     {
         "ranked_observation_basket": _rebuild_ranked_observation_basket_contract,
         "vanilla_option": _rebuild_vanilla_option_contract,
+        "lookback_option": _rebuild_lookback_option_contract,
         "american_option": _rebuild_american_option_contract,
         "quanto_option": _rebuild_quanto_option_contract,
         "callable_bond": _rebuild_callable_bond_contract,

@@ -20,6 +20,7 @@ from scipy.stats import multivariate_normal
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
+from trellis.models.analytical.support.probability import standard_normal_logcdf
 
 
 def _normal_cdf(value: float) -> float:
@@ -321,6 +322,9 @@ def price_equity_fixed_lookback_option_analytical(market_state: MarketState, spe
     expbt = exp(carry * maturity)
     sqrt_t = sqrt(maturity)
 
+    def scaled_normal_cdf(log_scale: float, value: float) -> float:
+        return exp(log_scale + standard_normal_logcdf(value))
+
     if option_type == "call":
         s_max = running_extreme
         if strike > s_max:
@@ -328,10 +332,11 @@ def price_equity_fixed_lookback_option_analytical(market_state: MarketState, spe
             d2 = d1 - sigma * sqrt_t
             if abs(s0 - strike) <= 1e-12:
                 term = -_normal_cdf(d1 - 2.0 * carry * sqrt_t / sigma) + expbt * _normal_cdf(d1)
-            elif s0 < strike and w > 100.0:
-                term = expbt * _normal_cdf(d1)
             else:
-                term = -(s0 / strike) ** (-w) * _normal_cdf(d1 - 2.0 * carry * sqrt_t / sigma) + expbt * _normal_cdf(d1)
+                term = -scaled_normal_cdf(
+                    -w * log(s0 / strike),
+                    d1 - 2.0 * carry * sqrt_t / sigma,
+                ) + expbt * _normal_cdf(d1)
             price = (
                 s0 * exp(-dividend * maturity) * _normal_cdf(d1)
                 - strike * exp(-rate * maturity) * _normal_cdf(d2)
@@ -342,10 +347,11 @@ def price_equity_fixed_lookback_option_analytical(market_state: MarketState, spe
             e2 = e1 - sigma * sqrt_t
             if abs(s0 - s_max) <= 1e-12:
                 term = -_normal_cdf(e1 - 2.0 * carry * sqrt_t / sigma) + expbt * _normal_cdf(e1)
-            elif s0 < s_max and w > 100.0:
-                term = expbt * _normal_cdf(e1)
             else:
-                term = -((s0 / s_max) ** (-w)) * _normal_cdf(e1 - 2.0 * carry * sqrt_t / sigma) + expbt * _normal_cdf(e1)
+                term = -scaled_normal_cdf(
+                    -w * log(s0 / s_max),
+                    e1 - 2.0 * carry * sqrt_t / sigma,
+                ) + expbt * _normal_cdf(e1)
             price = (
                 exp(-rate * maturity) * (s_max - strike)
                 + s0 * exp(-dividend * maturity) * _normal_cdf(e1)
@@ -359,10 +365,11 @@ def price_equity_fixed_lookback_option_analytical(market_state: MarketState, spe
             f2 = f1 - sigma * sqrt_t
             if abs(s0 - s_min) <= 1e-12:
                 term = _normal_cdf(-f1 + 2.0 * carry * sqrt_t / sigma) - expbt * _normal_cdf(-f1)
-            elif s0 > s_min and w < -100.0:
-                term = -expbt * _normal_cdf(-f1)
             else:
-                term = ((s0 / s_min) ** (-w)) * _normal_cdf(-f1 + 2.0 * carry * sqrt_t / sigma) - expbt * _normal_cdf(-f1)
+                term = scaled_normal_cdf(
+                    -w * log(s0 / s_min),
+                    -f1 + 2.0 * carry * sqrt_t / sigma,
+                ) - expbt * _normal_cdf(-f1)
             price = (
                 exp(-rate * maturity) * (strike - s_min)
                 - s0 * exp(-dividend * maturity) * _normal_cdf(-f1)
@@ -374,10 +381,11 @@ def price_equity_fixed_lookback_option_analytical(market_state: MarketState, spe
             d2 = d1 - sigma * sqrt_t
             if abs(s0 - strike) <= 1e-12:
                 term = _normal_cdf(-d1 + 2.0 * carry * sqrt_t / sigma) - expbt * _normal_cdf(-d1)
-            elif s0 > strike and w < -100.0:
-                term = -expbt * _normal_cdf(-d1)
             else:
-                term = ((s0 / strike) ** (-w)) * _normal_cdf(-d1 + 2.0 * carry * sqrt_t / sigma) - expbt * _normal_cdf(-d1)
+                term = scaled_normal_cdf(
+                    -w * log(s0 / strike),
+                    -d1 + 2.0 * carry * sqrt_t / sigma,
+                ) - expbt * _normal_cdf(-d1)
             price = (
                 strike * exp(-rate * maturity) * _normal_cdf(-d2)
                 - s0 * exp(-dividend * maturity) * _normal_cdf(-d1)

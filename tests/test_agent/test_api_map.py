@@ -566,6 +566,7 @@ def test_api_map_exposes_complete_fixed_lookback_analytical_composition():
 
     assert "fixed_lookback_analytical_composition" in selection.selected_families
     assert "standard_normal_cdf" in text
+    assert "standard_normal_logcdf" in text
     assert "resolve_scalar_diffusion_market_inputs" in text
     assert "year_fraction" in text
     assert "normalized_option_type" in text

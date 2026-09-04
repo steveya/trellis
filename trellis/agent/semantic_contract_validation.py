@@ -6,6 +6,7 @@ import hashlib
 import math
 import re
 from dataclasses import dataclass
+from datetime import date
 from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
@@ -1620,6 +1621,7 @@ def _validate_semantic_shape(
     dispatch = {
         "ranked_observation_basket": _validate_ranked_observation_basket_shape,
         "vanilla_option": _validate_vanilla_option_shape,
+        "lookback_option": _validate_lookback_option_shape,
         "american_option": _validate_american_option_shape,
         "quanto_option": _validate_quanto_option_shape,
         "callable_bond": _validate_callable_bond_shape,
@@ -1920,6 +1922,90 @@ def _validate_vanilla_option_shape(
     )
     if "spot" not in required_capabilities:
         errors.append("Vanilla option semantics require a spot underlier input.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_lookback_option_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the bounded single-underlier continuous-lookback shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=frozenset({"equity"}),
+    )
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "spot", "black_vol_surface"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="lookback_option",
+        expected_payoff_family="lookback_option",
+        expected_underlier_structure="single_underlier",
+        expected_payoff_rule="fixed_strike_lookback_payoff",
+        expected_settlement_rule="cash_settle_at_expiry",
+        expected_exercise_style="european",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=1,
+        path_dependence="path_dependent",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+    )
+    observation_schedule = tuple(contract.product.observation_schedule or ())
+    if len(observation_schedule) != 1:
+        errors.append("Lookback option semantics require exactly one expiry date.")
+    else:
+        try:
+            date.fromisoformat(str(observation_schedule[0]))
+        except ValueError:
+            errors.append("Lookback option semantics require a valid ISO expiry date.")
+    option_type = str(getattr(contract.product, "option_type", "") or "").strip().lower()
+    if option_type not in _ALLOWED_OPTION_TYPES:
+        errors.append(
+            "Lookback option semantics require option_type `call` or `put`, "
+            f"got `{contract.product.option_type}`."
+        )
+    underlying = getattr(contract.product, "underlying", None)
+    identifiers = tuple(getattr(underlying, "identifiers", ()) or ())
+    constituents = tuple(getattr(contract.product, "constituents", ()) or ())
+    if len(identifiers) != 1 or len(constituents) != 1:
+        errors.append(
+            "Lookback option semantics require exactly one underlier identifier "
+            "and exactly one matching constituent."
+        )
+    term_fields = dict(getattr(contract.product, "term_fields", {}) or {})
+    if term_fields.get("lookback_type") != "fixed_strike":
+        errors.append("Lookback option semantics require lookback_type `fixed_strike`.")
+    if term_fields.get("monitoring_style") != "continuous":
+        errors.append("Lookback option semantics require monitoring_style `continuous`.")
+    try:
+        running_extreme = float(term_fields.get("running_extreme"))
+    except (TypeError, ValueError):
+        running_extreme = math.nan
+    if not math.isfinite(running_extreme) or running_extreme <= 0.0:
+        errors.append("Lookback option semantics require a finite positive running_extreme.")
+    required_traits = {"lookback", "fixed_strike", "continuous_monitoring"}
+    missing_traits = sorted(required_traits - set(contract.product.payoff_traits))
+    if missing_traits:
+        errors.append(
+            "Lookback option semantics require payoff traits "
+            f"{missing_traits}."
+        )
+    if contract.product.model_family not in {"equity", "equity_diffusion"}:
+        errors.append(
+            "Lookback option semantics require a constant scalar equity diffusion model."
+        )
+    if "spot" not in required_capabilities:
+        errors.append("Lookback option semantics require a spot underlier input.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

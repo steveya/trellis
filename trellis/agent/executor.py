@@ -6320,29 +6320,49 @@ def _fixed_lookback_monte_carlo_evaluate_body(
         option_type = normalized_option_type(
             getattr(spec, "option_type", "call")
         )
+        np = get_numpy()
+        contract_spot = float(spec.spot)
+        runtime_spot = getattr(market_state, "spot", None)
+        spot = float(contract_spot if runtime_spot is None else runtime_spot)
         strike = float(spec.strike)
         resolved = resolve_scalar_diffusion_market_inputs(
             market_state,
-            spec,
+            replace(spec, spot=spot),
             volatility_coordinate=strike,
         )
-        np = get_numpy()
         notional = float(spec.notional)
-        if not np.isfinite(notional) or not np.isfinite(strike):
-            raise ValueError("lookback notional and strike must be finite")
+        if not all(
+            bool(np.isfinite(value))
+            for value in (contract_spot, spot, strike, notional)
+        ):
+            raise ValueError("lookback scalar contract values must be finite")
+        if contract_spot <= 0.0:
+            raise ValueError("lookback contract spot must be positive")
         if resolved.spot <= 0.0:
             raise ValueError("lookback Monte Carlo requires positive spot")
 
         running_value = getattr(spec, "running_extreme", None)
-        running_extreme = (
-            resolved.spot
+        historical_extreme = (
+            contract_spot
             if running_value is None
             else float(running_value)
         )
-        if not np.isfinite(running_extreme) or running_extreme <= 0.0:
+        if not np.isfinite(historical_extreme) or historical_extreme <= 0.0:
             raise ValueError(
                 "lookback Monte Carlo requires positive finite running_extreme"
             )
+        if option_type == "put":
+            if historical_extreme > contract_spot:
+                raise ValueError(
+                    "lookback running minimum must not exceed contract spot"
+                )
+            running_extreme = min(historical_extreme, resolved.spot)
+        else:
+            if historical_extreme < contract_spot:
+                raise ValueError(
+                    "lookback running maximum must be at least contract spot"
+                )
+            running_extreme = max(historical_extreme, resolved.spot)
 
         def settle(extreme):
             if option_type == "put":
@@ -6425,6 +6445,211 @@ def _fixed_lookback_monte_carlo_evaluate_body(
             or standard_error < 0.0
         ):
             raise ValueError("lookback Monte Carlo produced invalid estimator diagnostics")
+        return price
+        """
+    ).rstrip()
+
+
+def _fixed_lookback_analytical_evaluate_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    target_variants: Mapping[str, object],
+    generation_method: str,
+) -> str | None:
+    """Compose the bounded fixed-lookback formula from analytical primitives."""
+    required_refs = {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.models.analytical.support.probability.standard_normal_logcdf",
+        "trellis.core.differentiable.get_numpy",
+    }
+    use_analytical = normalized_target == "conze_viswanathan_analytical" or (
+        normalized_target in {"", "analytical"}
+        and generation_method == "analytical"
+    )
+    formula = str(
+        target_variants.get("formula") or "fixed_strike_continuous_lookback"
+    ).strip().lower()
+    if (
+        not use_analytical
+        or formula != "fixed_strike_continuous_lookback"
+        or not required_refs.issubset(refs)
+    ):
+        return None
+
+    return textwrap.dedent(
+        """\
+        lookback_type = str(
+            getattr(spec, "lookback_type", "fixed_strike")
+            or "fixed_strike"
+        ).strip().lower()
+        if lookback_type != "fixed_strike":
+            raise ValueError(
+                "analytical lookback pricing requires lookback_type='fixed_strike'"
+            )
+        monitoring_style = str(
+            getattr(spec, "monitoring_style", "continuous")
+            or "continuous"
+        ).strip().lower()
+        if monitoring_style != "continuous":
+            raise ValueError(
+                "analytical lookback pricing requires monitoring_style='continuous'"
+            )
+        exercise_style = str(
+            getattr(spec, "exercise_style", "european")
+            or "european"
+        ).strip().lower()
+        if exercise_style != "european":
+            raise ValueError(
+                "analytical lookback pricing requires exercise_style='european'"
+            )
+
+        settlement = market_state.settlement or market_state.as_of
+        if settlement is None:
+            raise ValueError("lookback pricing requires settlement or as_of")
+        contractual_maturity = float(
+            year_fraction(settlement, spec.expiry_date, spec.day_count)
+        )
+        if contractual_maturity < 0.0:
+            raise ValueError("lookback expiry must not precede settlement")
+
+        option_type = normalized_option_type(
+            getattr(spec, "option_type", "call")
+        )
+        np = get_numpy()
+        contract_spot = float(spec.spot)
+        runtime_spot = getattr(market_state, "spot", None)
+        spot = float(contract_spot if runtime_spot is None else runtime_spot)
+        strike = float(spec.strike)
+        notional = float(spec.notional)
+        historical_extreme = float(
+            contract_spot
+            if getattr(spec, "running_extreme", None) is None
+            else spec.running_extreme
+        )
+        if not all(
+            bool(np.isfinite(value))
+            for value in (contract_spot, spot, strike, notional, historical_extreme)
+        ):
+            raise ValueError("lookback scalar contract values must be finite")
+        if contract_spot <= 0.0 or spot <= 0.0 or strike <= 0.0:
+            raise ValueError("lookback spot and strike must be positive")
+        if historical_extreme <= 0.0:
+            raise ValueError("lookback running extreme must be positive")
+
+        if option_type == "call":
+            if historical_extreme < contract_spot:
+                raise ValueError(
+                    "lookback running maximum must be at least contract spot"
+                )
+            running_extreme = max(historical_extreme, spot)
+        else:
+            if historical_extreme > contract_spot:
+                raise ValueError(
+                    "lookback running minimum must not exceed contract spot"
+                )
+            running_extreme = min(historical_extreme, spot)
+
+        resolved = resolve_scalar_diffusion_market_inputs(
+            market_state,
+            replace(spec, spot=spot),
+            volatility_coordinate=strike,
+        )
+        maturity = resolved.maturity
+        if maturity <= 0.0:
+            intrinsic = (
+                max(running_extreme - strike, 0.0)
+                if option_type == "call"
+                else max(strike - running_extreme, 0.0)
+            )
+            return float(notional * intrinsic)
+
+        sigma = resolved.sigma
+        if sigma <= 0.0:
+            raise ValueError("analytical lookback pricing requires positive volatility")
+        rate = resolved.rate
+        dividend_yield = resolved.dividend_yield
+        sigma_squared = sigma * sigma
+        sigma_sqrt_time = sigma * np.sqrt(maturity)
+        carry = rate - dividend_yield
+        rate_discount = discount_factor_from_zero_rate(rate, maturity)
+        dividend_discount = discount_factor_from_zero_rate(
+            dividend_yield,
+            maturity,
+        )
+
+        def carry_correction(boundary):
+            log_moneyness = np.log(spot / boundary)
+            d1 = (
+                log_moneyness + (carry + 0.5 * sigma_squared) * maturity
+            ) / sigma_sqrt_time
+            d2 = d1 - sigma_sqrt_time
+            if abs(carry) <= 1.0e-8:
+                density = np.exp(-0.5 * d1 * d1) / np.sqrt(2.0 * np.pi)
+                if option_type == "call":
+                    correction = (
+                        log_moneyness + 0.5 * sigma_squared * maturity
+                    ) * standard_normal_cdf(d1) + sigma_sqrt_time * density
+                else:
+                    correction = (
+                        -log_moneyness - 0.5 * sigma_squared * maturity
+                    ) * standard_normal_cdf(-d1) + sigma_sqrt_time * density
+                return d1, d2, correction
+
+            weight = 2.0 * carry / sigma_squared
+            carry_growth = np.exp(carry * maturity)
+            shifted_d1 = d1 - 2.0 * carry * np.sqrt(maturity) / sigma
+            at_boundary = abs(log_moneyness) <= 1.0e-14
+            if option_type == "call":
+                if at_boundary:
+                    term = -standard_normal_cdf(
+                        shifted_d1
+                    ) + carry_growth * standard_normal_cdf(d1)
+                else:
+                    scaled_cdf = np.exp(
+                        -weight * log_moneyness
+                        + standard_normal_logcdf(shifted_d1)
+                    )
+                    term = -scaled_cdf + carry_growth * standard_normal_cdf(d1)
+            else:
+                if at_boundary:
+                    term = standard_normal_cdf(
+                        -shifted_d1
+                    ) - carry_growth * standard_normal_cdf(-d1)
+                else:
+                    scaled_cdf = np.exp(
+                        -weight * log_moneyness
+                        + standard_normal_logcdf(-shifted_d1)
+                    )
+                    term = scaled_cdf - carry_growth * standard_normal_cdf(-d1)
+            return d1, d2, sigma_squared * term / (2.0 * carry)
+
+        if option_type == "call":
+            boundary = max(strike, running_extreme)
+            d1, d2, correction = carry_correction(boundary)
+            unit_price = (
+                rate_discount * max(running_extreme - strike, 0.0)
+                + spot * dividend_discount * standard_normal_cdf(d1)
+                - boundary * rate_discount * standard_normal_cdf(d2)
+                + spot * rate_discount * correction
+            )
+        else:
+            boundary = min(strike, running_extreme)
+            d1, d2, correction = carry_correction(boundary)
+            unit_price = (
+                rate_discount * max(strike - running_extreme, 0.0)
+                - spot * dividend_discount * standard_normal_cdf(-d1)
+                + boundary * rate_discount * standard_normal_cdf(-d2)
+                + spot * rate_discount * correction
+            )
+
+        price = float(notional * unit_price)
+        if not bool(np.isfinite(price)):
+            raise ValueError("analytical lookback formula returned a non-finite price")
         return price
         """
     ).rstrip()
@@ -6599,6 +6824,14 @@ def _deterministic_exact_binding_evaluate_body(
         if asian_body is not None:
             return asian_body
     if instrument_type == "lookback_option":
+        lookback_analytical_body = _fixed_lookback_analytical_evaluate_body(
+            refs,
+            normalized_target=normalized_target,
+            target_variants=target_variants,
+            generation_method=generation_method,
+        )
+        if lookback_analytical_body is not None:
+            return lookback_analytical_body
         lookback_body = _fixed_lookback_monte_carlo_evaluate_body(
             refs,
             normalized_target=normalized_target,
@@ -8300,6 +8533,8 @@ def _deterministic_exact_binding_import_lines(
     ordinary generated modules.
     """
     imports: list[str] = []
+    if "replace(spec" in body:
+        imports.append("from dataclasses import replace")
     if "exp(" in body:
         imports.append("from math import exp")
     if "sqrt(" in body:
@@ -8691,6 +8926,7 @@ def _deterministic_exact_binding_import_lines(
     if any(
         symbol in body
         for symbol in (
+            "discount_factor_from_zero_rate(",
             "discounted_value(",
             "implied_zero_rate(",
             "normalized_option_type(",
@@ -8700,6 +8936,7 @@ def _deterministic_exact_binding_import_lines(
         support_symbols = [
             symbol
             for symbol in (
+                "discount_factor_from_zero_rate",
                 "discounted_value",
                 "implied_zero_rate",
                 "normalized_option_type",
@@ -8735,6 +8972,16 @@ def _deterministic_exact_binding_import_lines(
         imports.append("from trellis.models.black import black76_call, black76_put")
     if "get_numpy(" in body:
         imports.append("from trellis.core.differentiable import get_numpy")
+    if "resolve_scalar_diffusion_market_inputs(" in body:
+        imports.append(
+            "from trellis.models.resolution.single_state_diffusion import "
+            "resolve_scalar_diffusion_market_inputs"
+        )
+    if "standard_normal_cdf(" in body:
+        imports.append(
+            "from trellis.models.analytical.support.probability import "
+            "standard_normal_cdf"
+        )
     if "sobol_normals(" in body:
         imports.append(
             "from trellis.models.monte_carlo.variance_reduction import sobol_normals"

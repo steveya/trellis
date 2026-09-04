@@ -1696,6 +1696,66 @@ def test_compile_build_request_projects_explicit_comparison_semantics_before_rou
     assert compiled.generation_plan.backend_binding_id == expected_binding
 
 
+@pytest.mark.parametrize(
+    ("target_id", "expected_route"),
+    (
+        ("mc_lookback", "monte_carlo_paths"),
+        ("conze_viswanathan_analytical", "analytical_black76"),
+    ),
+)
+def test_compile_build_request_admits_explicit_fixed_lookback_target_contract(
+    target_id: str,
+    expected_route: str,
+):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import (
+        _description_for_comparison_target,
+        _effective_task_description,
+    )
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T30"
+    )
+    harness = build_comparison_harness_plan(task)
+    target = next(target for target in harness.targets if target.target_id == target_id)
+    description = _description_for_comparison_target(
+        _effective_task_description(task),
+        target,
+    )
+
+    compiled = compile_build_request(
+        description,
+        instrument_type="lookback_option",
+        preferred_method=target.contract.method,
+        metadata={
+            "comparison_target": target.target_id,
+            "comparison_target_contract": target.contract.to_payload(),
+        },
+    )
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.payoff_family == "lookback_option"
+    assert compiled.product_ir.exercise_style == "european"
+    assert set(compiled.product_ir.payoff_traits) >= {
+        "lookback",
+        "fixed_strike",
+        "continuous_monitoring",
+    }
+    assert compiled.request.metadata["semantic_extension"]["decision"] != "clarification"
+    assert compiled.execution_plan.action == "compile_only"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == expected_route
+    if target_id == "conze_viswanathan_analytical":
+        assert "trellis.core.differentiable.get_numpy" in set(
+            compiled.generation_plan.lane_reusable_primitives
+        )
+
+
 def test_compile_build_request_emits_exact_authority_for_explicit_terminal_basket_request():
     from trellis.agent.platform_requests import compile_build_request
 

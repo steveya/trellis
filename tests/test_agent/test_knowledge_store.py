@@ -877,6 +877,7 @@ class TestKnowledgeStore:
         for symbol in (
             "resolve_scalar_diffusion_market_inputs",
             "standard_normal_cdf",
+            "standard_normal_logcdf",
         ):
             assert symbol in lookback_requirements
         assert "price_equity_fixed_lookback_option_analytical" not in lookback_requirements

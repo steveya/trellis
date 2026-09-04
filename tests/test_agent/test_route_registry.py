@@ -2211,6 +2211,11 @@ class TestAnalyticalRoutes:
                 "time_measure",
             ),
             (
+                "trellis.core.differentiable",
+                "get_numpy",
+                "numeric_backend",
+            ),
+            (
                 "trellis.models.analytical.support",
                 "normalized_option_type",
                 "payoff_primitive",
@@ -2223,6 +2228,11 @@ class TestAnalyticalRoutes:
             (
                 "trellis.models.analytical.support.probability",
                 "standard_normal_cdf",
+                "probability_kernel",
+            ),
+            (
+                "trellis.models.analytical.support.probability",
+                "standard_normal_logcdf",
                 "probability_kernel",
             ),
         }

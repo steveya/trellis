@@ -1265,6 +1265,257 @@ def test_semantic_concept_resolution_maps_cap_wrapper_to_rate_option_strip():
     assert resolution.matched_wrapper == "cap"
 
 
+def test_semantic_concept_resolution_recognizes_bounded_fixed_lookback_option():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "European fixed-strike continuously monitored SPX lookback call with a running maximum.",
+        instrument_type="lookback_option",
+    )
+
+    assert resolution.concept_id == "lookback_option"
+    assert resolution.resolution_kind == "reuse_existing_concept"
+    assert resolution.matched_alias == "lookback_option"
+
+
+def test_generic_continuous_monitoring_is_not_a_lookback_cue():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "Continuously monitored variance swap on SPX.",
+        instrument_type="variance_swap",
+    )
+
+    assert resolution.concept_id != "lookback_option"
+    assert "lookback_option" not in resolution.candidate_concepts
+    assert "lookback_option" not in resolution.conflicting_concepts
+
+
+def test_explicit_lookback_contract_validates_and_compiles_supported_methods():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import (
+        SemanticContract,
+        make_lookback_option_contract,
+    )
+
+    contract = make_lookback_option_contract(
+        description=(
+            "European fixed-strike continuously monitored SPX lookback call "
+            "with running maximum 100, strike 100, and expiry 2025-11-15"
+        ),
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+        preferred_method="analytical",
+    )
+    explicit_terms = dict(contract.product.term_fields)
+    explicit_terms.update({"strike": 100.0, "notional": 1_000_000.0})
+    contract = replace(
+        contract,
+        product=replace(contract.product, term_fields=explicit_terms),
+    )
+
+    assert isinstance(contract, SemanticContract)
+    assert validate_semantic_contract(contract).ok
+
+    analytical = compile_semantic_contract(contract)
+    monte_carlo = compile_semantic_contract(
+        contract,
+        preferred_method="monte_carlo",
+    )
+
+    assert analytical.semantic_id == "lookback_option"
+    assert analytical.product_ir.instrument == "lookback_option"
+    assert analytical.product_ir.payoff_family == "lookback_option"
+    assert analytical.pricing_plan.method == "analytical"
+    assert analytical.primitive_routes == ("analytical_black76",)
+    assert (
+        "trellis.models.resolution.single_state_diffusion"
+        in analytical.target_modules
+    )
+    assert monte_carlo.pricing_plan.method == "monte_carlo"
+    assert monte_carlo.primitive_routes == ("monte_carlo_paths",)
+    assert dict(monte_carlo.contract.product.term_fields) == explicit_terms
+    assert (
+        "trellis.models.monte_carlo.transition_state"
+        in monte_carlo.target_modules
+    )
+
+
+@pytest.mark.parametrize(
+    ("term_field", "value", "expected_error"),
+    (
+        ("lookback_type", "floating_strike", "lookback_type `fixed_strike`"),
+        ("monitoring_style", "discrete", "monitoring_style `continuous`"),
+        ("running_extreme", -1.0, "finite positive running_extreme"),
+    ),
+)
+def test_explicit_lookback_contract_rejects_unsupported_variants(
+    term_field,
+    value,
+    expected_error,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    term_fields = dict(contract.product.term_fields)
+    term_fields[term_field] = value
+    contract = replace(
+        contract,
+        product=replace(contract.product, term_fields=term_fields),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any(expected_error in error for error in report.errors)
+
+
+def test_explicit_lookback_contract_requires_exactly_one_underlier():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            underlying=replace(
+                contract.product.underlying,
+                identifiers=("SPX", "NDX"),
+            ),
+            constituents=("SPX", "NDX"),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("exactly one underlier" in error for error in report.errors)
+
+
+def test_explicit_lookback_contract_requires_exactly_one_expiry():
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    with pytest.raises(ValueError, match="exactly one expiry"):
+        make_lookback_option_contract(
+            description="European fixed-strike continuous SPX lookback call",
+            underliers=("SPX",),
+            observation_schedule=("2025-06-15", "2025-11-15"),
+            running_extreme=100.0,
+        )
+
+
+def test_explicit_lookback_contract_requires_valid_iso_expiry():
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    with pytest.raises(ValueError, match="valid ISO expiry"):
+        make_lookback_option_contract(
+            description="European fixed-strike continuous SPX lookback call",
+            underliers=("SPX",),
+            observation_schedule=("not-a-date",),
+            running_extreme=100.0,
+        )
+
+
+def test_lookback_validation_rejects_multiple_expiries():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observation_schedule=("2025-06-15", "2025-11-15"),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("exactly one expiry" in error for error in report.errors)
+
+
+def test_lookback_validation_rejects_invalid_iso_expiry():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observation_schedule=("not-a-date",),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("valid ISO expiry" in error for error in report.errors)
+
+
+@pytest.mark.parametrize("option_type", (None, "straddle"))
+def test_explicit_lookback_contract_requires_call_or_put(option_type):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+        option_type=option_type,
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("option_type `call` or `put`" in error for error in report.errors)
+
+
+def test_explicit_invalid_lookback_side_is_not_replaced_by_description_inference():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+        option_type="straddle",
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert contract.product.option_type == "straddle"
+    assert not report.ok
+    assert any("option_type `call` or `put`" in error for error in report.errors)
+
+
 @pytest.mark.parametrize(
     "description,instrument_type,expected_concept_id,expected_concept_role",
     [

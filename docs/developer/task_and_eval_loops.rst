@@ -1581,6 +1581,28 @@ adapter code supplies the prior running extremum and owns expiry settlement,
 strike, notional, discounting, and estimator checks. Both lanes admit only
 European fixed-strike continuous monitoring and fail closed instead of
 substituting a different lookback contract.
+The retained ``T30`` and ``T96`` proof rows exercise exactly that bounded
+contract against ``equity_barrier_smile``. Each names the analytical lane as
+the reference, relates the conditional-bridge Monte Carlo result by
+``within_tolerance``, and authors ``n_paths=80000``, ``n_steps=96``, and
+``seed=42``. Their 1.25% relative tolerance is a statistical acceptance
+contract, not a new pricing guarantee: it is a rounded four-standard-error
+envelope over the checked seeded estimate and remains materially tighter than
+the historical 5% runtime fallback.
+The rows use the ``conze_viswanathan_analytical`` target name because the
+admitted fixed-strike formula is the Conze-Viswanathan branch; the former
+Goldman-Sosin-Gatto label described a different lookback formula family and
+was not a valid identifier for this contract. ``lookback_option`` also has an
+explicit semantic-concept entry, so exact requests no longer fall through to
+the vanilla-option ambiguity path before route selection.
+The same id is registered with the typed semantic-contract compiler. An
+explicit contract created with ``make_lookback_option_contract(...)`` validates
+and compiles to either the ``analytical`` or ``monte_carlo`` method surface;
+method specialization preserves the fixed-strike, continuous-monitoring,
+running-extreme contract instead of rebuilding it as a vanilla option. This
+compiler entry does not widen product support: non-equity, multi-underlier,
+floating-strike, discrete-monitoring, non-European, and non-scalar-diffusion
+contracts still fail validation.
 The support-contract pass records missing strike/monitoring semantics and
 known unsupported variants as structured primitive blockers. Those blockers
 stop the build before code generation even when the generic Monte Carlo route

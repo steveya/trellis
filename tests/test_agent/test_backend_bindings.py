@@ -1142,6 +1142,7 @@ def test_resolve_backend_binding_spec_exposes_complete_lookback_composition():
         "trellis.models.analytical.support.normalized_option_type",
         "trellis.models.analytical.support.discount_factor_from_zero_rate",
         "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.models.analytical.support.probability.standard_normal_logcdf",
     } <= set(resolved.primitive_refs)
 
 

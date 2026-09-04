@@ -691,7 +691,7 @@ from trellis.models.black import black76_call, black76_put, black76_asset_or_not
 from trellis.models.analytical import terminal_intrinsic, terminal_vanilla_from_basis
 from trellis.models.analytical.support import asset_or_nothing_intrinsic, cash_or_nothing_intrinsic, discount_factor_from_zero_rate, discounted_value, forward_from_dividend_yield, gauss_hermite_product_expectation, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
 from trellis.models.analytical.support.expectations import gauss_hermite_product_expectation
-from trellis.models.analytical.support.probability import bivariate_standard_normal_cdf, standard_normal_cdf
+from trellis.models.analytical.support.probability import bivariate_standard_normal_cdf, standard_normal_cdf, standard_normal_logcdf
 from trellis.models.calibration.solve_request import ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request
 from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw
 from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw

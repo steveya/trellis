@@ -86,16 +86,42 @@ def test_benchmark_request_description_makes_cap_request_explicit():
 @pytest.mark.parametrize("task_id", ["T30", "T96"])
 def test_legacy_lookback_contract_is_explicit_and_runtime_bindable(task_id):
     task = _legacy_tasks()[task_id]
+    contract = task["benchmark_contract"]
+    cross_validate = task["cross_validate"]
 
     description = benchmark_request_description(task, root=ROOT)
     overrides = benchmark_spec_overrides(task, root=ROOT)
 
+    assert task["task_disposition"] == "executable_pricing"
+    assert "Goldman-Sosin-Gatto" not in task["title"]
+    assert "Conze-Viswanathan" in task["title"]
+    assert task["instrument_type"] == "lookback_option"
+    assert task["market_scenario_id"] == "equity_barrier_smile"
+    assert task["validation_policy"] == "invariants_and_cross_method"
     assert canonical_benchmark_instrument_type(task) == "lookback_option"
+    assert contract["n_paths"] == 80_000
+    assert contract["n_steps"] == 96
+    assert contract["seed"] == 42
+    assert cross_validate["reference_target"] == "conze_viswanathan_analytical"
+    assert cross_validate["relations"] == {"mc_lookback": "within_tolerance"}
+    assert cross_validate["tolerance_pct"] == pytest.approx(1.25)
+    assert set(cross_validate["target_contracts"]) == {
+        "mc_lookback",
+        "conze_viswanathan_analytical",
+    }
     assert description is not None
+    assert "Notional: 1.0." in description
     assert "Lookback type: fixed_strike." in description
     assert "Monitoring style: continuous." in description
+    assert "Exercise style: european." in description
+    assert "Day count: act/365." in description
+    assert "Monte Carlo controls: n_paths=80000, n_steps=96, seed=42." in description
     assert overrides["lookback_type"] == "fixed_strike"
     assert overrides["monitoring_style"] == "continuous"
+    assert overrides["day_count"] is DayCountConvention.ACT_365
+    assert overrides["n_paths"] == 80_000
+    assert overrides["n_steps"] == 96
+    assert overrides["seed"] == 42
 
 
 def test_financepy_lookback_contract_declares_continuous_monitoring():

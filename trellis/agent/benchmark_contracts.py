@@ -891,6 +891,7 @@ def _benchmark_detail_lines(
             days=round(float(contract.get("expiry_years") or 0.0) * 365.0)
         )
         lines = [
+            f"Notional: {contract.get('notional', 1.0)}.",
             f"Spot: {contract.get('spot')}.",
             f"Strike: {contract.get('strike')}.",
             f"Option type: {contract.get('option_type', 'call')}.",
@@ -899,12 +900,26 @@ def _benchmark_detail_lines(
             lines.append(f"Lookback type: {contract['lookback_type']}.")
         if contract.get("monitoring_style") not in {None, ""}:
             lines.append(f"Monitoring style: {contract['monitoring_style']}.")
+        if contract.get("exercise_style") not in {None, ""}:
+            lines.append(f"Exercise style: {contract['exercise_style']}.")
+        if contract.get("day_count") not in {None, ""}:
+            lines.append(f"Day count: {contract['day_count']}.")
         lines.extend(
             [
                 f"Running extreme: {contract.get('running_extreme', contract.get('spot'))}.",
                 f"Expiry date: {expiry_date.isoformat()}.",
             ]
         )
+        if all(
+            contract.get(key) not in {None, ""}
+            for key in ("n_paths", "n_steps", "seed")
+        ):
+            lines.append(
+                "Monte Carlo controls: "
+                f"n_paths={int(contract['n_paths'])}, "
+                f"n_steps={int(contract['n_steps'])}, "
+                f"seed={int(contract['seed'])}."
+            )
         return lines
     if product == "chooser_option":
         choose_date = _valuation_date(contract, scenario_contract) + timedelta(
@@ -1119,14 +1134,19 @@ def _digital_option_overrides(contract: Mapping[str, Any], *, valuation_date: da
 def _lookback_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
     running_extreme = _float_or_none(contract.get("running_extreme"))
     spot = _float_or_none(contract.get("spot"))
-    return {
+    overrides = {
         "notional": _float_or_none(contract.get("notional")) or 1.0,
         "spot": spot,
         "strike": _float_or_none(contract.get("strike")),
         "expiry_date": valuation_date + timedelta(days=round(float(contract.get("expiry_years") or 0.0) * 365.0)),
         "option_type": str(contract.get("option_type") or "call").strip().lower(),
         "running_extreme": running_extreme if running_extreme is not None else spot,
+        "day_count": _day_count(contract.get("day_count")),
     }
+    for key in ("n_paths", "n_steps", "seed"):
+        if contract.get(key) not in {None, ""}:
+            overrides[key] = int(contract[key])
+    return overrides
 
 
 def _chooser_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:

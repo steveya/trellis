@@ -56,6 +56,52 @@ def test_fixed_lookback_monte_carlo_tracks_analytical_call():
     assert monte_carlo == pytest.approx(analytical, rel=0.06)
 
 
+@pytest.mark.parametrize(
+    ("option_type", "strike", "rate"),
+    (("call", 101.0, 0.021), ("put", 99.0, -0.021)),
+)
+def test_fixed_lookback_low_volatility_large_carry_weight_tracks_monte_carlo(
+    option_type,
+    strike,
+    rate,
+):
+    from trellis.models.lookback_option import (
+        price_equity_fixed_lookback_option_monte_carlo_result,
+    )
+
+    market_state = MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(rate),
+        vol_surface=FlatVol(0.02),
+    )
+    spec = LookbackSpec(
+        notional=1.0,
+        spot=100.0,
+        strike=strike,
+        running_extreme=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type=option_type,
+        n_paths=250_000,
+        n_steps=96,
+        seed=42,
+    )
+
+    monte_carlo = price_equity_fixed_lookback_option_monte_carlo_result(
+        market_state,
+        spec,
+    )
+    analytical = price_equity_fixed_lookback_option_analytical(
+        market_state,
+        spec,
+    )
+
+    assert analytical == pytest.approx(
+        monte_carlo.price,
+        abs=5.0 * monte_carlo.std_error,
+    )
+
+
 def test_fixed_lookback_monte_carlo_uses_running_extreme_for_call_intrinsic_floor():
     from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo
 
