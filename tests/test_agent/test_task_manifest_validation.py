@@ -820,6 +820,38 @@ def test_legacy_lookback_validation_uses_the_callers_repository_root(tmp_path):
     assert_executable_task_selection(materialized, root=tmp_path)
 
 
+@pytest.mark.parametrize("task_id", ("T30", "T96"))
+def test_fixed_lookback_proofs_cannot_be_reclassified_as_honest_blocks(task_id):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_legacy_lookback_task(task_id))
+    task.update(
+        {
+            "task_disposition": "expected_honest_block",
+            "disposition_reason": "Attempt to bypass the fixed pricing proof.",
+            "expected_outcome": "honest_block",
+            "expected_blocker_ids": ["semantic_product_contract_gap:lookback"],
+            "honest_block_contract": {
+                "reason": "lookback_missing",
+                "summary": "Skip the authored pricing proof.",
+                "packet_type": "semantic_product_contract_gap",
+                "missing_capabilities": ["lookback"],
+                "suggested_action": "Block instead of executing.",
+            },
+        }
+    )
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.lookback_invalid_contract" in _codes(exc_info.value.report)
+
+
 @pytest.mark.parametrize(
     ("mutation"),
     (

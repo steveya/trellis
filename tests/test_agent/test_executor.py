@@ -3427,6 +3427,7 @@ def test_deterministic_exact_binding_module_materializes_lookback_analytical_tar
         "normalized_option_type(",
         "discount_factor_from_zero_rate(",
         "standard_normal_cdf(",
+        "standard_normal_logcdf(",
         "running_extreme",
         "fixed_strike",
         "continuous",
@@ -3470,6 +3471,7 @@ def test_generated_lookback_analytical_composition_matches_checked_adapter(
         "trellis.models.analytical.support.normalized_option_type",
         "trellis.models.analytical.support.discount_factor_from_zero_rate",
         "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.models.analytical.support.probability.standard_normal_logcdf",
         "trellis.core.differentiable.get_numpy",
     )
     generation_plan = SimpleNamespace(
@@ -3539,6 +3541,113 @@ def test_generated_lookback_analytical_composition_matches_checked_adapter(
     ).evaluate(market_state)
 
     assert composed == pytest.approx(checked, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("option_type", "strike", "rate"),
+    (("call", 101.0, 0.021), ("put", 99.0, -0.021)),
+)
+def test_generated_lookback_analytical_preserves_large_weight_carry_correction(
+    option_type,
+    strike,
+    rate,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.lookback_option import (
+        price_equity_fixed_lookback_option_monte_carlo_result,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.models.analytical.support.probability.standard_normal_logcdf",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="lookback_option",
+    )
+    schema = STATIC_SPECS["lookback_option"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Fixed lookback low-volatility analytical composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        request_metadata={
+            "comparison_target_contract": {
+                "schema_version": 1,
+                "contract_id": "comparison-target:test:conze-viswanathan:v1",
+                "target_id": "conze_viswanathan_analytical",
+                "method": "analytical",
+                "route_id": "analytical_black76",
+                "route_family": "analytical",
+                "variant_parameters": {
+                    "formula": "fixed_strike_continuous_lookback"
+                },
+                "validation_bundle_id": "analytical:lookback_option",
+                "payoff_family": "lookback_option",
+                "exercise_style": "european",
+                "model_family": "equity_diffusion",
+                "observation_style": "path_dependent",
+                "semantic_axes": {"underlying_asset_class": "equity"},
+                "explicit": True,
+            }
+        },
+        comparison_target="conze_viswanathan_analytical",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1249_low_vol>", "exec"), namespace)  # noqa: S102
+    spec = namespace[schema.spec_name](
+        notional=1.0,
+        spot=100.0,
+        strike=strike,
+        expiry_date=_date(2025, 11, 15),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        monitoring_style="continuous",
+        running_extreme=100.0,
+        dividend_yield=0.0,
+        n_paths=250_000,
+        n_steps=96,
+        seed=42,
+    )
+    market_state = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=YieldCurve.flat(rate),
+        vol_surface=FlatVol(0.02),
+    )
+
+    analytical_price = float(
+        namespace[schema.class_name](spec).evaluate(market_state)
+    )
+    monte_carlo = price_equity_fixed_lookback_option_monte_carlo_result(
+        market_state,
+        spec,
+    )
+
+    assert analytical_price == pytest.approx(
+        monte_carlo.price,
+        abs=5.0 * monte_carlo.std_error,
+    )
 
 
 def test_deterministic_exact_binding_module_materializes_lookback_mc_target():

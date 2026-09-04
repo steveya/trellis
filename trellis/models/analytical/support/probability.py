@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from math import isfinite
 
-from scipy.special import ndtr
+from scipy.special import log_ndtr, ndtr
 from scipy.stats import multivariate_normal
 
 _BIVARIATE_MAX_INTEGRATION_POINTS = 200_000
@@ -28,6 +28,17 @@ def standard_normal_cdf(value: float) -> float:
     """
     normalized = _finite_float(value, name="value")
     return float(ndtr(normalized))
+
+
+def standard_normal_logcdf(value: float) -> float:
+    """Return the scalar log standard-normal cumulative probability.
+
+    Unlike taking the logarithm of :func:`standard_normal_cdf`, this kernel
+    preserves finite tail information when the probability itself underflows.
+    It is not an automatic-differentiation primitive.
+    """
+    normalized = _finite_float(value, name="value")
+    return float(log_ndtr(normalized))
 
 
 def bivariate_standard_normal_cdf(
@@ -82,4 +93,5 @@ def bivariate_standard_normal_cdf(
 __all__ = [
     "bivariate_standard_normal_cdf",
     "standard_normal_cdf",
+    "standard_normal_logcdf",
 ]

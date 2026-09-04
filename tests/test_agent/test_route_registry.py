@@ -2230,6 +2230,11 @@ class TestAnalyticalRoutes:
                 "standard_normal_cdf",
                 "probability_kernel",
             ),
+            (
+                "trellis.models.analytical.support.probability",
+                "standard_normal_logcdf",
+                "probability_kernel",
+            ),
         }
 
     def test_chooser_primitives_use_raw_analytical_composition(self, registry):

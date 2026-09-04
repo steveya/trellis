@@ -1514,7 +1514,9 @@ The admitted European fixed-strike continuous-lookback lane uses the dedicated
 ``fixed_lookback_analytical_composition`` card. It exposes
 ``resolve_scalar_diffusion_market_inputs``, ``year_fraction``,
 ``normalized_option_type``, ``discount_factor_from_zero_rate``, and
-``standard_normal_cdf``. A scalar root and bivariate Gaussian probability are
+``standard_normal_cdf``. It also exposes ``standard_normal_logcdf`` so scaled
+Gaussian tail products remain numerically stable when low volatility makes
+the carry weight large. A scalar root and bivariate Gaussian probability are
 not part of this formula, so the lookback alias does not select the general
 critical-state card.
 

@@ -407,9 +407,12 @@ product pricer. It resolves runtime spot, maturity, rate, dividend carry,
 strike-coordinate Black volatility, and discounting with
 ``resolve_scalar_diffusion_market_inputs(...)``; normalizes call or put
 semantics; and evaluates the fixed-strike continuous-lookback formula with
-``standard_normal_cdf(...)``. Generated code owns the running maximum/minimum
-branches, expiry settlement, and notional. When rate minus dividend carry is
-zero, it uses the analytic formula limit instead of perturbing market data.
+``standard_normal_cdf(...)``. Scaled Gaussian tail terms are evaluated through
+``standard_normal_logcdf(...)`` so low-volatility, nonzero-carry requests do
+not lose a material correction term. Generated code owns the running
+maximum/minimum branches, expiry settlement, and notional. When rate minus
+dividend carry is zero, it uses the analytic formula limit instead of
+perturbing market data.
 
 The observed maximum for a call must be at least the contract spot; the
 observed minimum for a put must be at most the contract spot. A runtime spot

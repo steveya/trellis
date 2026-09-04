@@ -466,7 +466,7 @@
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - "Admit only European fixed-strike continuous monitoring under constant scalar diffusion inputs; reject floating strike, discrete monitoring, non-European exercise, local/stochastic volatility, and jumps."
-    - "Resolve the runtime spot and strike volatility coordinate with `resolve_scalar_diffusion_market_inputs`, normalize call/put semantics, and use `get_numpy` with `standard_normal_cdf` for the explicit Conze-Viswanathan scalar math."
+    - "Resolve the runtime spot and strike volatility coordinate with `resolve_scalar_diffusion_market_inputs`, normalize call/put semantics, and use `get_numpy` with `standard_normal_cdf` plus `standard_normal_logcdf` for stable exponentially scaled Gaussian-CDF terms in the explicit Conze-Viswanathan scalar math."
     - "Validate the historical running maximum/minimum against contract spot, include runtime spot in the effective extreme, apply the analytic zero-carry limit, and own expiry settlement and one-time notional scaling in generated code."
     - "Do not call a product-specific analytical lookback helper; retained wrappers are compatibility/reference evidence only."
   reasoning: "The admitted fixed-strike continuous lookback formula is a bounded composition over scalar market, time, discounting, option-normalization, and Gaussian primitives."

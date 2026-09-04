@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from math import asin, nextafter, pi
+from math import asin, exp, isfinite, nextafter, pi
 
 import pytest
 
 from trellis.models.analytical.support.probability import (
     bivariate_standard_normal_cdf,
     standard_normal_cdf,
+    standard_normal_logcdf,
 )
 from trellis.models.calibration import (
     ObjectiveBundle,
@@ -22,6 +23,15 @@ def test_standard_normal_cdf_matches_reference_values():
     assert standard_normal_cdf(0.0) == pytest.approx(0.5)
     assert standard_normal_cdf(1.0) == pytest.approx(0.8413447460685429)
     assert standard_normal_cdf(-1.0) == pytest.approx(1.0 - standard_normal_cdf(1.0))
+
+
+def test_standard_normal_logcdf_preserves_extreme_tail_information():
+    assert exp(standard_normal_logcdf(-10.0)) == pytest.approx(
+        standard_normal_cdf(-10.0),
+        rel=1e-14,
+    )
+    assert standard_normal_cdf(-40.0) == 0.0
+    assert isfinite(standard_normal_logcdf(-40.0))
 
 
 def test_bivariate_standard_normal_cdf_matches_independent_and_zero_threshold_cases():
@@ -95,6 +105,8 @@ def test_standard_normal_cdf_composes_with_typed_bounded_scalar_root():
 def test_gaussian_probability_primitives_reject_non_finite_inputs(value):
     with pytest.raises(ValueError, match="finite"):
         standard_normal_cdf(value)
+    with pytest.raises(ValueError, match="finite"):
+        standard_normal_logcdf(value)
     with pytest.raises(ValueError, match="finite"):
         bivariate_standard_normal_cdf(value, 0.0, 0.0)
     with pytest.raises(ValueError, match="finite"):

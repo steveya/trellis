@@ -1090,6 +1090,16 @@ def _validate_legacy_task(
         )
         disposition = "executable_pricing"
 
+    if task_id in {"T30", "T96"}:
+        issues.extend(
+            _validate_legacy_lookback_comparison_contract(
+                manifest_name,
+                task,
+                path,
+                root=root,
+            )
+        )
+
     if disposition == "expected_honest_block":
         issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
         return issues
@@ -1158,15 +1168,6 @@ def _validate_legacy_task(
                 "executable tasks require an authored tolerance or validation policy",
                 task_id=task_id,
                 path=path,
-            )
-        )
-    if task_id in {"T30", "T96"}:
-        issues.extend(
-            _validate_legacy_lookback_comparison_contract(
-                manifest_name,
-                task,
-                path,
-                root=root,
             )
         )
     return issues

@@ -6464,6 +6464,7 @@ def _fixed_lookback_analytical_evaluate_body(
         "trellis.models.analytical.support.normalized_option_type",
         "trellis.models.analytical.support.discount_factor_from_zero_rate",
         "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.models.analytical.support.probability.standard_normal_logcdf",
         "trellis.core.differentiable.get_numpy",
     }
     use_analytical = normalized_target == "conze_viswanathan_analytical" or (
@@ -6608,27 +6609,23 @@ def _fixed_lookback_analytical_evaluate_body(
                     term = -standard_normal_cdf(
                         shifted_d1
                     ) + carry_growth * standard_normal_cdf(d1)
-                elif weight > 100.0:
-                    term = carry_growth * standard_normal_cdf(d1)
                 else:
-                    term = -np.exp(
+                    scaled_cdf = np.exp(
                         -weight * log_moneyness
-                    ) * standard_normal_cdf(
-                        shifted_d1
-                    ) + carry_growth * standard_normal_cdf(d1)
+                        + standard_normal_logcdf(shifted_d1)
+                    )
+                    term = -scaled_cdf + carry_growth * standard_normal_cdf(d1)
             else:
                 if at_boundary:
                     term = standard_normal_cdf(
                         -shifted_d1
                     ) - carry_growth * standard_normal_cdf(-d1)
-                elif weight < -100.0:
-                    term = -carry_growth * standard_normal_cdf(-d1)
                 else:
-                    term = np.exp(
+                    scaled_cdf = np.exp(
                         -weight * log_moneyness
-                    ) * standard_normal_cdf(
-                        -shifted_d1
-                    ) - carry_growth * standard_normal_cdf(-d1)
+                        + standard_normal_logcdf(-shifted_d1)
+                    )
+                    term = scaled_cdf - carry_growth * standard_normal_cdf(-d1)
             return d1, d2, sigma_squared * term / (2.0 * carry)
 
         if option_type == "call":

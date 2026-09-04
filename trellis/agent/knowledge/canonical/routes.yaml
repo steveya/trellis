@@ -1952,10 +1952,13 @@ routes:
           - module: trellis.models.analytical.support.probability
             symbol: standard_normal_cdf
             role: probability_kernel
+          - module: trellis.models.analytical.support.probability
+            symbol: standard_normal_logcdf
+            role: probability_kernel
         adapters: []
         notes:
           - "Admit only European fixed-strike continuous monitoring under constant scalar diffusion inputs and use the `fixed_lookback_analytical_composition` API-map card."
-          - "Generated code owns the call/put formula, historical and runtime extreme invariants, analytic zero-carry limit, expiry settlement, and one-time notional scaling."
+          - "Generated code owns the call/put formula, stable log-space assembly of exponentially scaled Gaussian-CDF terms, historical and runtime extreme invariants, analytic zero-carry limit, expiry settlement, and one-time notional scaling."
           - "Do not call a product-specific analytical lookback helper; retained wrappers are comparison evidence only."
       - when:
           contract_pattern:

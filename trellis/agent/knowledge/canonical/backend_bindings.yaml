@@ -1318,6 +1318,9 @@ bindings:
           - module: trellis.models.analytical.support.probability
             symbol: standard_normal_cdf
             role: probability_kernel
+          - module: trellis.models.analytical.support.probability
+            symbol: standard_normal_logcdf
+            role: probability_kernel
       - when:
           contract_pattern:
             payoff:

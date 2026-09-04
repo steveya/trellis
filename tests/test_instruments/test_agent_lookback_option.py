@@ -211,5 +211,6 @@ def test_checked_lookback_adapter_source_composes_reusable_primitives():
         "normalized_option_type",
         "discount_factor_from_zero_rate",
         "standard_normal_cdf",
+        "standard_normal_logcdf",
     ):
         assert symbol in source

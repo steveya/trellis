@@ -13,7 +13,10 @@ from trellis.models.analytical.support import (
     discount_factor_from_zero_rate,
     normalized_option_type,
 )
-from trellis.models.analytical.support.probability import standard_normal_cdf
+from trellis.models.analytical.support.probability import (
+    standard_normal_cdf,
+    standard_normal_logcdf,
+)
 from trellis.models.resolution.single_state_diffusion import (
     resolve_scalar_diffusion_market_inputs,
 )
@@ -179,23 +182,23 @@ class LookbackOptionPayoff:
                     term = -standard_normal_cdf(
                         shifted_d1
                     ) + carry_growth * standard_normal_cdf(d1)
-                elif weight > 100.0:
-                    term = carry_growth * standard_normal_cdf(d1)
                 else:
-                    term = -exp(-weight * log_moneyness) * standard_normal_cdf(
-                        shifted_d1
-                    ) + carry_growth * standard_normal_cdf(d1)
+                    scaled_cdf = exp(
+                        -weight * log_moneyness
+                        + standard_normal_logcdf(shifted_d1)
+                    )
+                    term = -scaled_cdf + carry_growth * standard_normal_cdf(d1)
             else:
                 if at_boundary:
                     term = standard_normal_cdf(
                         -shifted_d1
                     ) - carry_growth * standard_normal_cdf(-d1)
-                elif weight < -100.0:
-                    term = -carry_growth * standard_normal_cdf(-d1)
                 else:
-                    term = exp(-weight * log_moneyness) * standard_normal_cdf(
-                        -shifted_d1
-                    ) - carry_growth * standard_normal_cdf(-d1)
+                    scaled_cdf = exp(
+                        -weight * log_moneyness
+                        + standard_normal_logcdf(-shifted_d1)
+                    )
+                    term = scaled_cdf - carry_growth * standard_normal_cdf(-d1)
             return d1, d2, sigma_squared * term / (2.0 * carry)
 
         if option_type == "call":

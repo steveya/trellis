@@ -401,6 +401,7 @@ def test_gaussian_probability_primitives_are_visible_to_import_registry():
     symbols = {
         "bivariate_standard_normal_cdf",
         "standard_normal_cdf",
+        "standard_normal_logcdf",
     }
 
     assert module_exists(module)
