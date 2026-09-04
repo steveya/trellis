@@ -159,6 +159,17 @@ additionally require ``task_disposition: expected_honest_block``, a
 disposition reason, and a complete repair contract before selection admits
 them. Hold and rewrite dispositions remain non-executable.
 
+Resolved limitation ids are capability history, not valid task blockers. The
+legacy T03, T83, and T85 rows therefore use explicit current dispositions
+instead of ``blocked_by: L1/L2/L9``. T03 is a ``research_hold`` until a
+reproducible trinomial-lattice experiment authors its market, model, grid,
+metric, and tolerance. T83 is a ``proof_hold`` until a bond, settlement,
+discount curve, KRD bucket grid, bump/interpolation policy, and tolerance are
+authored. T85 is a ``rewrite_candidate`` until bond cashflows, settlement,
+clean/dirty price basis, accrued-interest treatment, and yield conventions are
+specified. Their ``missing_inputs`` fields are audit data; none of these
+dispositions may cross the executable task-selection boundary.
+
 The weighted nth-to-default extension task P006 previously used this honest-
 block boundary while QUA-1237 owned the missing contract. It now carries
 explicit comparison target contracts: the analytical/copula target binds

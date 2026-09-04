@@ -22,6 +22,13 @@ effective dates, while the checked callable-bond routes accept only one scalar
 fixed coupon. `QUA-1251` owns the missing variable-coupon primitive and an
 authored T09 schedule.
 
+T03, T83, and T85 no longer cite resolved limitations as blockers. Their
+manifest dispositions now match this map: T03 is a `research_hold` pending
+a reproducible lattice experiment, T83 is a `proof_hold` pending an authored
+bond/curve/KRD-grid contract, and T85 is a `rewrite_candidate` pending full
+bond cashflows, settlement, price basis, and yield conventions. All three
+remain outside executable pricing selection.
+
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |
 | `T01` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical |
