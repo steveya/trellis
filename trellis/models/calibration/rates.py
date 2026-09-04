@@ -46,7 +46,10 @@ from trellis.models.calibration.quote_maps import (
     build_implied_vol_quote_map,
 )
 from trellis.models.calibration.materialization import materialize_model_parameter_set
-from trellis.models.hull_white_parameters import build_hull_white_parameter_payload
+from trellis.models.hull_white_parameters import (
+    build_hull_white_parameter_payload,
+    validate_hull_white_parameter_set_name,
+)
 
 
 class SwaptionLike(Protocol):
@@ -623,6 +626,7 @@ def calibrate_hull_white(
     parameter_set_name: str = "hull_white",
 ) -> HullWhiteCalibrationResult:
     """Calibrate Hull-White mean reversion and sigma to a supported swaption strip."""
+    parameter_set_name = validate_hull_white_parameter_set_name(parameter_set_name)
     if market_state.discount is None:
         raise ValueError("Hull-White calibration requires market_state.discount")
 
@@ -749,6 +753,7 @@ def calibrate_hull_white(
     model_parameters = build_hull_white_parameter_payload(
         mean_reversion,
         sigma,
+        calibration_source="calibrate_hull_white",
         parameter_set_name=parameter_set_name,
         source_kind="calibrated",
         metadata={

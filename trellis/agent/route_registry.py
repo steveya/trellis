@@ -16,7 +16,6 @@ through ``trellis.agent.backend_bindings``.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -205,6 +204,7 @@ class RouteSpec:
     successful_builds: int = 0
     match_model_family: tuple[str, ...] | None = None
     match_payoff_family_by_method: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    match_required_payoff_traits: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -653,6 +653,9 @@ def _parse_route(raw: dict) -> RouteSpec:
         exclude_exercise=_str_tuple(match.get("exclude_exercise")),
         match_payoff_family=_optional_str_tuple(match.get("payoff_family")),
         match_payoff_traits=_optional_str_tuple(match.get("payoff_traits")),
+        match_required_payoff_traits=_optional_str_tuple(
+            match.get("required_payoff_traits")
+        ),
         match_model_family=_optional_str_tuple(match.get("model_family")),
         match_payoff_family_by_method=_parse_payoff_family_by_method(
             match.get("payoff_family_by_method")
@@ -867,6 +870,12 @@ def match_candidate_routes(
             )
             if not (instrument_ok or payoff_family_ok or payoff_traits_ok):
                 continue
+
+        if (
+            route.match_required_payoff_traits is not None
+            and not set(route.match_required_payoff_traits).issubset(payoff_traits)
+        ):
+            continue
 
         # Exercise include/exclude
         if route.match_exercise is not None and exercise not in route.match_exercise:

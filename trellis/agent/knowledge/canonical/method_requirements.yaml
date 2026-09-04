@@ -121,9 +121,24 @@ rate_tree:
 - 'EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
   VALUE (discounted expected future value) against the exercise price. The continuation
   value is computed from the tree''s own discount factors, not the flat input rate.'
-- 'RATE-LATTICE SCOPE: For callable bonds, puttable bonds, and Bermudan swaptions,
-  use build_rate_lattice/lattice_backward_induction and treat the exact route family
-  as rate_lattice.'
+- 'RATE-LATTICE SCOPE: Callable and puttable fixed income use the admitted generic
+  rate-lattice composition. The legacy bermudan_swaption route remains compatibility
+  evidence only. Convention-complete physical Bermudan swaptions must select the
+  separate physical_bermudan_swaption_lattice route.'
+- 'STRICT PHYSICAL BERMUDAN CONTRACT: Resolve every exercise-to-swap-start pair and
+  its co-terminal fixed/floating schedules with resolve_co_terminal_swap_tails(...).
+  Use the exact named discount and forecast curves, consume both legs full authored
+  conventions, and price only physical settlement under the declared
+  static_additive_forward_basis projection policy.'
+- 'STRICT HULL-WHITE AUTHORITY: Resolve the exact named parameter set with
+  resolve_named_hull_white_parameter_set(...). Never synthesize mean reversion,
+  translate Black volatility into Hull-White sigma, or use the permissive legacy
+  parameter resolver on physical_bermudan_swaption_lattice.'
+- 'STRICT LATTICE DATE MAPPING: Preserve authored and adjusted dates, reject distinct
+  dates that collide on one uniform-lattice step, and reject mappings beyond the
+  authored maximum error. Require the model-time day count/calendar and positive
+  lattice step count explicitly; do not describe nearest-step mapping as exact-date
+  support.'
 - 'EQUITY-TREE SCOPE: For American/Bermudan equity options, import BinomialTree from
   trellis.models.trees.binomial and backward_induction from trellis.models.trees.backward_induction,
   then use BinomialTree.crr(...) and backward_induction(..., exercise_type="american"|"bermudan").

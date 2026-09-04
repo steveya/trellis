@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import date
+from types import SimpleNamespace
 
 import numpy as raw_np
 import pytest
@@ -47,6 +48,7 @@ from trellis.models.calibration.local_vol import (
     dupire_local_vol_result,
 )
 from trellis.models.rate_style_swaption import price_swaption_black76
+from trellis.models.hull_white_parameters import resolve_named_hull_white_parameter_set
 from trellis.models.calibration.heston_fit import (
     HestonSmileCalibrationResult,
     build_heston_smile_surface,
@@ -981,6 +983,14 @@ class TestRatesCalibration:
         calibrated_state = result.apply_to_market_state(market_state)
         assert calibrated_state.model_parameters["model_family"] == "hull_white"
         assert calibrated_state.model_parameter_sets["hw_calibrated"]["sigma"] == pytest.approx(result.sigma)
+        resolved_parameters = resolve_named_hull_white_parameter_set(
+            calibrated_state,
+            parameter_set_name="hw_calibrated",
+        )
+        assert resolved_parameters.mean_reversion == pytest.approx(result.mean_reversion)
+        assert resolved_parameters.sigma == pytest.approx(result.sigma)
+        assert resolved_parameters.source_kind == "calibrated"
+        assert resolved_parameters.calibration_source == "calibrate_hull_white"
         hw_materialization = calibrated_state.materialized_calibrated_object(object_kind="model_parameter_set")
         assert hw_materialization is not None
         assert hw_materialization["object_name"] == "hw_calibrated"
@@ -993,3 +1003,13 @@ class TestRatesCalibration:
             model="hull_white",
             n_steps=80,
         ) == pytest.approx(target_prices[0], rel=1e-4)
+
+
+@pytest.mark.parametrize("bad_name", ("", "  ", " hw_calibrated", "hw_calibrated ", None, 7))
+def test_hull_white_calibration_rejects_inexact_parameter_set_name_before_solving(bad_name):
+    with pytest.raises(ValueError, match="parameter_set_name.*exact nonblank string"):
+        calibrate_hull_white(
+            (),
+            SimpleNamespace(discount=object()),
+            parameter_set_name=bad_name,  # type: ignore[arg-type]
+        )

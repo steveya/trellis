@@ -3730,6 +3730,7 @@ class TestEngineFamilyCoverage:
         "local_vol_monte_carlo": "monte_carlo",
         "local_vol_pde": "pde_solver",
         "qmc_sobol_paths": "qmc",
+        "physical_bermudan_swaption_lattice": "lattice",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
         "cev_spot_lattice": "lattice",

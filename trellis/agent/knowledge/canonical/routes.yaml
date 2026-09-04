@@ -1170,6 +1170,74 @@ routes:
   # Rate tree routes
   # -----------------------------------------------------------------------
 
+  - id: physical_bermudan_swaption_lattice
+    engine_family: lattice
+    route_family: physical_bermudan_swaption_lattice
+    status: promoted
+    confidence: 1.0
+    compatibility_alias_policy: internal_only
+    match:
+      methods: [rate_tree]
+      payoff_family: [physical_bermudan_swaption]
+      required_payoff_traits:
+        [physical_settlement, co_terminal_swap_tails, dual_curve_projection, strict_conventions, named_hull_white_parameters, bermudan_exercise]
+      exercise: [bermudan]
+      model_family: [interest_rate, short_rate]
+    admissibility:
+      control_styles: [holder_max]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price]
+      supports_sensitivity_outputs: false
+      supported_state_tags: [schedule_state, recombining_safe]
+      supports_calibration: true
+    primitives:
+      - module: trellis.models.hull_white_parameters
+        symbol: resolve_named_hull_white_parameter_set
+        role: market_binding
+      - module: trellis.models.rate_swap_tail
+        symbol: PhysicalBermudanSwapTailSpec
+        role: contract_spec
+      - module: trellis.models.rate_swap_tail
+        symbol: compile_physical_bermudan_swap_tail_spec
+        role: contract_compiler
+      - module: trellis.models.rate_swap_tail
+        symbol: NamedRateCurve
+        role: curve_binding
+      - module: trellis.models.rate_swap_tail
+        symbol: resolve_co_terminal_swap_tails
+        role: schedule_builder
+      - module: trellis.models.trees.models
+        symbol: MODEL_REGISTRY
+        role: model_registry
+      - module: trellis.models.trees.algebra
+        symbol: BINOMIAL_1F_TOPOLOGY
+        role: topology
+      - module: trellis.models.trees.algebra
+        symbol: UNIFORM_ADDITIVE_MESH
+        role: mesh
+      - module: trellis.models.trees.algebra
+        symbol: TERM_STRUCTURE_TARGET
+        role: calibration_target
+      - module: trellis.models.trees.algebra
+        symbol: build_lattice
+        role: lattice_builder
+      - module: trellis.models.rate_swap_tail
+        symbol: price_physical_bermudan_swaption_lattice
+        role: pricing_kernel
+    adapters: []
+    notes:
+      - "Bind the exact named discount and forecast curves and the exact named provenance-complete Hull-White parameter set; no default curve, Black-vol conversion, or model parameter is admissible."
+      - "Construct the frozen physical swap-tail contract from all authored exercise mapping, leg conventions, model-time convention, projection policy, and lattice tolerance fields."
+      - "Build one calibrated generic Hull-White lattice, then pass it and the exact curve bindings to price_physical_bermudan_swaption_lattice(...)."
+      - "Do not select trellis.models.bermudan_swaption_tree or a European/Black helper for this route."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount, market_state.selected_curve_names]
+        forward_curve: [market_state.forecast_curves]
+        model_parameters: [market_state.model_parameter_sets]
+
   - id: exercise_lattice
     engine_family: lattice
     route_family: lattice
@@ -1184,6 +1252,7 @@ routes:
       schedule_dependence_bonus: 1.0
     match:
       methods: [rate_tree]
+      exclude_instruments: [physical_bermudan_swaption]
       exercise: [american, bermudan, issuer_call, holder_put]
     admissibility:
       control_styles: [identity, holder_max, issuer_min]
@@ -1435,6 +1504,7 @@ routes:
       non_european_penalty: -2.0
     match:
       methods: [rate_tree]
+      exclude_instruments: [physical_bermudan_swaption]
     admissibility:
       control_styles: [identity, holder_max, issuer_min]
       event_support: none

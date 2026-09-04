@@ -1,3 +1,12 @@
+- name: PHYSICAL_BERMUDAN_SWAP_TAIL_LATTICE
+  method: rate_tree
+  source: explicit physical Bermudan contract plus exact named discount curve, forecast curve, and Hull-White parameter set
+  convention: Each exercise date maps to an authored swap start and one co-terminal fixed/floating swap tail; all schedule, calendar, business-day, stub, roll, lag, day-count, compounding, gearing, and spread terms are explicit
+  typical_range: positive notional, finite fixed rate/spread/gearing, non-negative lags, ordered live exercise dates, swap starts no earlier than exercise, and common maturity after every swap start
+  model_expects: physical settlement, separate named discount and forecast curves, projection_policy=static_additive_forward_basis, one provenance-complete named constant-parameter Hull-White set, an explicit model-time day count/calendar, an authored positive lattice step count, and a bounded uniform lattice date tolerance
+  conversion: Build every exercise-specific fixed/floating schedule first; derive initial discount-curve and forecast-curve forwards over each floating accrual, carry their additive basis onto nodewise lattice-implied discount forwards, discount every coupon at its authored payment date, then apply holder-max exercise rollback
+  model_range: one-factor constant-parameter Hull-White lattice with deterministic static additive forward basis and exact fail-closed convention/date binding
+  warning: Never fall back to the legacy Bermudan helper, European Black76, a discount-curve projection proxy, hidden schedule defaults, Black-vol-to-Hull-White conversion, or silent event-step deduplication; ACT/ACT ICMA coupons, parameterized day-of-month rolls, and non-shipped calendar aliases are not supported by this route
 - name: volatility
   method: rate_tree
   source: market_state.vol_surface.black_vol(T, K)

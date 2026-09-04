@@ -1725,6 +1725,188 @@ def test_deterministic_callable_bond_tree_composition_binds_declared_lattice_mod
     assert "price_callable_bond_tree" not in generated.code
 
 
+_STRICT_PHYSICAL_BERMUDAN_REFS = (
+    "trellis.models.hull_white_parameters.resolve_named_hull_white_parameter_set",
+    "trellis.models.rate_swap_tail.PhysicalBermudanSwapTailSpec",
+    "trellis.models.rate_swap_tail.compile_physical_bermudan_swap_tail_spec",
+    "trellis.models.rate_swap_tail.NamedRateCurve",
+    "trellis.models.rate_swap_tail.resolve_co_terminal_swap_tails",
+    "trellis.models.trees.models.MODEL_REGISTRY",
+    "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY",
+    "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH",
+    "trellis.models.trees.algebra.TERM_STRUCTURE_TARGET",
+    "trellis.models.trees.algebra.build_lattice",
+    "trellis.models.rate_swap_tail.price_physical_bermudan_swaption_lattice",
+)
+
+
+def test_deterministic_physical_bermudan_swaption_uses_strict_dual_curve_route():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=_STRICT_PHYSICAL_BERMUDAN_REFS,
+        primitive_plan=SimpleNamespace(
+            route="physical_bermudan_swaption_lattice",
+            primitives=(),
+        ),
+        method="rate_tree",
+        instrument_type="physical_bermudan_swaption",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["physical_bermudan_swaption"],
+        "Strict physical Bermudan swaption",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    ast.parse(generated.code)
+    assert "resolve_named_hull_white_parameter_set(" in generated.code
+    assert "compile_physical_bermudan_swap_tail_spec(" in generated.code
+    assert "price_physical_bermudan_swaption_lattice(" in generated.code
+    assert "selected_curve_names" in generated.code
+    assert "forecast_curves" in generated.code
+    assert "from collections.abc import Mapping" in generated.code
+    assert "spec.lattice_steps" in generated.code
+    assert "spec.lattice_date_tolerance_days" in generated.code
+    assert "bermudan_swaption_tree" not in generated.code
+    assert "black76" not in generated.code.lower()
+
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+
+    namespace: dict[str, object] = {}
+    exec(compile(generated.code, "<qua_1253>", "exec"), namespace)  # noqa: S102
+    spec = namespace["PhysicalBermudanSwaptionSpec"](
+        notional=1_000_000.0,
+        fixed_rate=0.035,
+        exercise_dates=(date(2026, 7, 1), date(2027, 1, 1)),
+        exercise_to_swap_start=(
+            (date(2026, 7, 1), date(2026, 7, 1)),
+            (date(2027, 1, 1), date(2027, 1, 1)),
+        ),
+        swap_maturity=date(2027, 7, 1),
+        payer_receiver="payer",
+        settlement_type="physical",
+        currency="USD",
+        discount_curve_id="USD-OIS",
+        forecast_curve_id="USD-SOFR-3M",
+        hull_white_parameter_source="USD-HW",
+        fixed_frequency="semiannual",
+        fixed_day_count="30/360",
+        fixed_calendar_name="WeekendOnly",
+        fixed_business_day_adjustment="unadjusted",
+        fixed_stub_rule="short_final",
+        fixed_roll_convention="none",
+        fixed_payment_lag_business_days=0,
+        floating_frequency="quarterly",
+        floating_day_count="ACT/360",
+        floating_calendar_name="WeekendOnly",
+        floating_business_day_adjustment="unadjusted",
+        floating_stub_rule="short_final",
+        floating_roll_convention="none",
+        floating_fixing_lag_business_days=0,
+        floating_reset_lag_business_days=0,
+        floating_payment_lag_business_days=0,
+        floating_rate_index="USD-SOFR-3M",
+        floating_compounding="simple",
+        floating_gearing=1.0,
+        floating_spread=0.0,
+        model_time_day_count="ACT/365F",
+        model_time_calendar_name="WeekendOnly",
+        projection_policy="static_additive_forward_basis",
+        lattice_steps=546,
+        lattice_date_tolerance_days=0,
+    )
+    market_state = MarketState(
+        as_of=date(2026, 1, 1),
+        settlement=date(2026, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.04)},
+        selected_curve_names={
+            "discount_curve": "USD-OIS",
+            "forecast_curve": "USD-SOFR-3M",
+        },
+        model_parameter_sets={
+            "USD-HW": {
+                "parameter_set_name": "USD-HW",
+                "model_family": "hull_white",
+                "mean_reversion": 0.05,
+                "sigma": 0.01,
+                "source_kind": "calibrated",
+                "calibration_source": "test",
+            }
+        },
+    )
+
+    price = namespace["PhysicalBermudanSwaptionPayoff"](spec).evaluate(market_state)
+
+    assert price == pytest.approx(6187.347581908174)
+    from trellis.engine.payoff_pricer import price_payoff
+
+    proxied_price = price_payoff(
+        namespace["PhysicalBermudanSwaptionPayoff"](spec),
+        market_state,
+    )
+    assert proxied_price == pytest.approx(price)
+    from dataclasses import replace as dataclass_replace
+
+    higher_volatility = dataclass_replace(
+        market_state,
+        model_parameter_sets={
+            "USD-HW": {
+                **market_state.model_parameter_sets["USD-HW"],
+                "sigma": 0.015,
+            }
+        },
+    )
+    higher_volatility_price = namespace["PhysicalBermudanSwaptionPayoff"](
+        spec
+    ).evaluate(higher_volatility)
+    assert higher_volatility_price != pytest.approx(price)
+
+    contradictory_selection = dataclass_replace(
+        market_state,
+        selected_curve_names={
+            "discount_curve": "USD-OIS",
+            "forecast_curve": "USD-LIBOR-3M",
+        },
+    )
+    with pytest.raises(ValueError, match="forecast_curve_id must exactly match"):
+        namespace["PhysicalBermudanSwaptionPayoff"](spec).evaluate(
+            contradictory_selection
+        )
+
+
+@pytest.mark.parametrize("missing_ref", _STRICT_PHYSICAL_BERMUDAN_REFS)
+def test_deterministic_physical_bermudan_swaption_fails_closed_on_binding_drift(
+    missing_ref,
+):
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=tuple(
+            ref for ref in _STRICT_PHYSICAL_BERMUDAN_REFS if ref != missing_ref
+        ),
+        primitive_plan=SimpleNamespace(
+            route="physical_bermudan_swaption_lattice",
+            primitives=(),
+        ),
+        method="rate_tree",
+        instrument_type="physical_bermudan_swaption",
+    )
+
+    assert _deterministic_exact_binding_evaluate_body(generation_plan) is None
+
+
 def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
@@ -6221,6 +6403,55 @@ def test_validation_market_payload_preserves_exact_quanto_spec_identities():
     assert aligned["model_parameters"]["sx5e_eurusd"] == pytest.approx(0.35)
     assert resolved.spot == pytest.approx(100.0)
     assert resolved.corr == pytest.approx(0.35)
+
+
+def test_validation_market_payload_seeds_strict_physical_bermudan_named_inputs():
+    from datetime import date as _date
+
+    from trellis.agent.executor import _align_validation_market_payload_to_spec
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.hull_white_parameters import (
+        resolve_named_hull_white_parameter_set,
+    )
+
+    discount = YieldCurve.flat(0.05)
+    spec = SimpleNamespace(
+        discount_curve_id="USD-OIS",
+        forecast_curve_id="USD-SOFR-3M",
+        hull_white_parameter_source="USD-HW-VALIDATION",
+    )
+    payload = {
+        "as_of": _date(2024, 11, 15),
+        "settlement": _date(2024, 11, 15),
+        "discount": discount,
+        "forecast_curves": {"EUR-DISC": YieldCurve.flat(0.03)},
+        "model_parameters": {"quanto_correlation": 0.35},
+    }
+
+    aligned = _align_validation_market_payload_to_spec(
+        payload,
+        spec,
+        rate=0.05,
+        vol=0.20,
+        corr=0.35,
+    )
+    market_state = MarketState(**aligned)
+    parameters = resolve_named_hull_white_parameter_set(
+        market_state,
+        parameter_set_name="USD-HW-VALIDATION",
+    )
+
+    assert aligned["selected_curve_names"] == {
+        "discount_curve": "USD-OIS",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+    assert "USD-SOFR-3M" in aligned["forecast_curves"]
+    assert parameters.parameter_set_name == "USD-HW-VALIDATION"
+    assert parameters.mean_reversion == pytest.approx(0.05)
+    assert parameters.sigma == pytest.approx(0.01)
+    assert parameters.source_kind == "observed"
+    assert parameters.calibration_source == "synthetic_build_validation"
 
 
 def test_generated_quanto_qmc_uses_seeded_sobol_joint_factor_shocks():

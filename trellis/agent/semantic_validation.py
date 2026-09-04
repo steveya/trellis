@@ -313,6 +313,8 @@ class _SemanticVisitor(ast.NodeVisitor):
             self.engine_families.add("equity_tree")
         elif module_name.startswith("trellis.models.bermudan_swaption_tree"):
             self.engine_families.add("rate_lattice")
+        elif module_name.startswith("trellis.models.rate_swap_tail"):
+            self.engine_families.add("rate_lattice")
         elif module_name.startswith("trellis.models.equity_option_pde"):
             self.engine_families.add("pde_solver")
         elif module_name.startswith("trellis.models.trees.lattice"):

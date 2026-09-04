@@ -65,6 +65,33 @@
   implies: [early_exercise]
   method_hint: rate_tree
 
+- id: bermudan_exercise
+  description: "Each authored exercise date is an explicit holder decision event"
+  implies: [bermudan]
+  method_hint: rate_tree
+
+- id: physical_settlement
+  description: "Exercise delivers the underlying contract rather than a cash or annuity amount"
+
+- id: co_terminal_swap_tails
+  description: "Each exercise maps to its own swap start while all underlying swap tails share one maturity"
+  implies: [bermudan_exercise, fixed_coupons, floating_coupons]
+  method_hint: rate_tree
+
+- id: dual_curve_projection
+  description: "Floating coupons project from an explicitly named forecast curve and discount on a separate named curve"
+  implies: [floating_coupons]
+  market_data: [discount_curve, forward_curve]
+
+- id: strict_conventions
+  description: "Pricing consumes authored schedule, calendar, adjustment, stub, roll, lag, day-count, and compounding conventions without defaults"
+
+- id: named_hull_white_parameters
+  description: "A named provenance-complete Hull-White parameter set supplies mean reversion and absolute short-rate volatility"
+  implies: [mean_reversion]
+  method_hint: rate_tree
+  market_data: [model_parameters]
+
 - id: american
   description: "Exercise allowed continuously up to maturity"
   implies: [early_exercise]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from numbers import Real
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -19,6 +20,12 @@ from trellis.agent.semantic_concepts import (
 )
 from trellis.agent.semantic_contracts import (
     DEFAULT_PHASE_ORDER,
+    _PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
+    _PHYSICAL_BERMUDAN_CALENDARS,
+    _PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
+    _PHYSICAL_BERMUDAN_FREQUENCIES,
+    _PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
+    _PHYSICAL_BERMUDAN_STUB_RULES,
     SemanticContract,
     parse_semantic_contract,
 )
@@ -57,6 +64,7 @@ _ALLOWED_UNDERLIER_STRUCTURES = frozenset(
         "single_issuer_bond",
         "single_curve_rate_style",
         "single_reference_entity",
+        "dual_curve_co_terminal_swap_tails",
     }
 )
 _CANONICAL_REQUIRED_CAPABILITIES = frozenset({
@@ -1627,6 +1635,7 @@ def _validate_semantic_shape(
         "callable_bond": _validate_callable_bond_shape,
         "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
+        "physical_bermudan_swaption": _validate_physical_bermudan_swaption_shape,
         "period_rate_option_strip": _validate_period_rate_option_strip_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
@@ -2557,3 +2566,441 @@ def _validate_rate_style_swaption_shape(
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
         )
+
+
+def _validate_physical_bermudan_swaption_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the strict, convention-complete physical Bermudan shape."""
+    del warnings
+    product = contract.product
+    _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "forward_curve", "model_parameters"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="physical_bermudan_swaption",
+        expected_payoff_family="physical_bermudan_swaption",
+        expected_underlier_structure="dual_curve_co_terminal_swap_tails",
+        expected_payoff_rule="co_terminal_fixed_float_swap_tail_exercise_value",
+        expected_settlement_rule="physical_swap_delivery_at_exercise",
+        expected_exercise_style="bermudan",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=0,
+        path_dependence="schedule_dependent",
+        state_dependence="schedule_dependent",
+        schedule_dependence=True,
+    )
+
+    required_input_ids = tuple(
+        item.input_id for item in contract.market_data.required_inputs
+    )
+    expected_input_ids = (
+        "discount_curve",
+        "forecast_curve",
+        "hull_white_parameters",
+    )
+    if required_input_ids != expected_input_ids:
+        errors.append(
+            "Physical Bermudan swaption semantics require exactly named market inputs "
+            f"{expected_input_ids}; got {required_input_ids}."
+        )
+    if contract.market_data.optional_inputs or contract.market_data.derivable_inputs:
+        errors.append(
+            "Physical Bermudan swaption named curves and Hull-White parameters cannot be optional or derivable."
+        )
+    input_capabilities = tuple(
+        item.capability for item in contract.market_data.required_inputs
+    )
+    if "black_vol_surface" in input_capabilities or "black_vol_surface" in required_input_ids:
+        errors.append(
+            "Physical Bermudan swaption semantics reject black_vol_surface fallback inputs."
+        )
+
+    expected_traits = {
+        "physical_settlement",
+        "co_terminal_swap_tails",
+        "dual_curve_projection",
+        "strict_conventions",
+        "named_hull_white_parameters",
+        "bermudan_exercise",
+    }
+    missing_traits = sorted(expected_traits - set(product.payoff_traits))
+    if missing_traits:
+        errors.append(
+            "Physical Bermudan swaption semantics require payoff traits "
+            f"{missing_traits}."
+        )
+    if contract.methods.candidate_methods != ("rate_tree",):
+        errors.append(
+            "Physical Bermudan swaption semantics admit only the rate_tree method; "
+            "European and analytical fallbacks are prohibited."
+        )
+    expected_route = ("physical_bermudan_swaption_lattice",)
+    if contract.blueprint.primitive_families != expected_route:
+        errors.append(
+            "Physical Bermudan swaption semantics require the strict "
+            f"physical_bermudan_swaption_lattice route; got {contract.blueprint.primitive_families}."
+        )
+    if contract.blueprint.spec_schema_hints != ("physical_bermudan_swaption",):
+        errors.append(
+            "Physical Bermudan swaption semantics require the strict "
+            "physical_bermudan_swaption spec schema."
+        )
+    forbidden_modules = tuple(
+        module
+        for module in contract.blueprint.target_modules
+        if "rate_style_swaption" in module or "black" in module.lower()
+    )
+    if forbidden_modules:
+        errors.append(
+            "Physical Bermudan swaption semantics prohibit European/Black fallback modules: "
+            f"{forbidden_modules}."
+        )
+
+    terms = dict(getattr(product, "term_fields", {}) or {})
+    required_term_names = (
+        "notional",
+        "fixed_rate",
+        "exercise_dates",
+        "exercise_to_swap_start",
+        "swap_maturity",
+        "payer_receiver",
+        "settlement_type",
+        "currency",
+        "discount_curve_id",
+        "forecast_curve_id",
+        "hull_white_parameter_source",
+        "fixed_frequency",
+        "fixed_day_count",
+        "fixed_calendar_name",
+        "fixed_business_day_adjustment",
+        "fixed_stub_rule",
+        "fixed_roll_convention",
+        "fixed_payment_lag_business_days",
+        "floating_frequency",
+        "floating_day_count",
+        "floating_calendar_name",
+        "floating_business_day_adjustment",
+        "floating_stub_rule",
+        "floating_roll_convention",
+        "floating_fixing_lag_business_days",
+        "floating_reset_lag_business_days",
+        "floating_payment_lag_business_days",
+        "floating_rate_index",
+        "floating_compounding",
+        "floating_gearing",
+        "floating_spread",
+        "model_time_day_count",
+        "model_time_calendar_name",
+        "projection_policy",
+        "lattice_steps",
+        "lattice_date_tolerance_days",
+    )
+    missing_terms = [name for name in required_term_names if name not in terms]
+    if missing_terms:
+        errors.append(
+            "Physical Bermudan swaption semantics require authored term_fields: "
+            f"{missing_terms}."
+        )
+
+    exact_string_vocabularies: dict[str, frozenset[str] | None] = {
+        "currency": None,
+        "discount_curve_id": None,
+        "forecast_curve_id": None,
+        "hull_white_parameter_source": None,
+        "fixed_frequency": _PHYSICAL_BERMUDAN_FREQUENCIES,
+        "fixed_day_count": _PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
+        "fixed_calendar_name": _PHYSICAL_BERMUDAN_CALENDARS,
+        "fixed_business_day_adjustment": _PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
+        "fixed_stub_rule": _PHYSICAL_BERMUDAN_STUB_RULES,
+        "fixed_roll_convention": _PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
+        "floating_frequency": _PHYSICAL_BERMUDAN_FREQUENCIES,
+        "floating_day_count": _PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
+        "floating_calendar_name": _PHYSICAL_BERMUDAN_CALENDARS,
+        "floating_business_day_adjustment": _PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
+        "floating_stub_rule": _PHYSICAL_BERMUDAN_STUB_RULES,
+        "floating_roll_convention": _PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
+        "floating_rate_index": None,
+        "floating_compounding": frozenset({"simple"}),
+        "model_time_day_count": frozenset({"ACT/365F"}),
+        "model_time_calendar_name": _PHYSICAL_BERMUDAN_CALENDARS,
+        "projection_policy": frozenset({"static_additive_forward_basis"}),
+        "payer_receiver": frozenset({"payer", "receiver"}),
+        "settlement_type": frozenset({"physical"}),
+    }
+    for name, vocabulary in exact_string_vocabularies.items():
+        value = terms.get(name)
+        if not isinstance(value, str) or not value or value != value.strip():
+            errors.append(
+                f"Physical Bermudan swaption term_fields.{name} must be an exact non-empty string without surrounding whitespace."
+            )
+        elif vocabulary is not None and value not in vocabulary:
+            errors.append(
+                f"Physical Bermudan swaption term_fields.{name} is outside the executable vocabulary {tuple(sorted(vocabulary))}."
+            )
+
+    currency = terms.get("currency")
+    if (
+        isinstance(currency, str)
+        and (
+            len(currency) != 3
+            or not currency.isascii()
+            or not currency.isalpha()
+            or currency != currency.upper()
+        )
+    ):
+        errors.append(
+            "Physical Bermudan swaption term_fields.currency must be exactly three uppercase ASCII letters."
+        )
+    if terms.get("settlement_type") != "physical":
+        errors.append(
+            "Physical Bermudan swaption semantics require physical settlement_type; cash and annuity settlement are unsupported."
+        )
+    obligations = tuple(product.obligations)
+    if (
+        len(obligations) != 1
+        or obligations[0].settlement_kind != "physical"
+        or obligations[0].settle_date_rule != "physical_swap_delivery_at_exercise"
+    ):
+        errors.append(
+            "Physical Bermudan swaption semantics require one physical swap-delivery obligation."
+        )
+    if terms.get("payer_receiver") not in {"payer", "receiver"}:
+        errors.append(
+            "Physical Bermudan swaption term_fields.payer_receiver must be `payer` or `receiver`."
+        )
+    if (
+        isinstance(terms.get("discount_curve_id"), str)
+        and terms.get("discount_curve_id")
+        and terms.get("discount_curve_id") == terms.get("forecast_curve_id")
+    ):
+        errors.append(
+            "Physical Bermudan swaption discount_curve_id and forecast_curve_id must identify separate curves."
+        )
+    if terms.get("floating_rate_index") != terms.get("forecast_curve_id"):
+        errors.append(
+            "Physical Bermudan swaption term_fields.floating_rate_index must exactly match forecast_curve_id."
+        )
+    if terms.get("floating_compounding") != "simple":
+        errors.append(
+            "Physical Bermudan swaption currently requires floating_compounding `simple`."
+        )
+    if terms.get("projection_policy") != "static_additive_forward_basis":
+        errors.append(
+            "Physical Bermudan swaption projection_policy must be `static_additive_forward_basis`."
+        )
+
+    for name in ("notional", "fixed_rate", "floating_gearing", "floating_spread"):
+        value = terms.get(name)
+        if isinstance(value, bool) or not isinstance(value, Real):
+            errors.append(f"Physical Bermudan swaption term_fields.{name} must be finite.")
+            continue
+        numeric_value = float(value)
+        if not math.isfinite(numeric_value):
+            errors.append(f"Physical Bermudan swaption term_fields.{name} must be finite.")
+        if name == "notional" and numeric_value <= 0.0:
+            errors.append("Physical Bermudan swaption term_fields.notional must be positive.")
+
+    for name in (
+        "fixed_payment_lag_business_days",
+        "floating_fixing_lag_business_days",
+        "floating_reset_lag_business_days",
+        "floating_payment_lag_business_days",
+        "lattice_date_tolerance_days",
+    ):
+        value = terms.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            errors.append(
+                f"Physical Bermudan swaption term_fields.{name} must be a non-negative integer."
+            )
+    lattice_steps = terms.get("lattice_steps")
+    if (
+        isinstance(lattice_steps, bool)
+        or not isinstance(lattice_steps, int)
+        or lattice_steps <= 0
+    ):
+        errors.append(
+            "Physical Bermudan swaption term_fields.lattice_steps must be a positive integer."
+        )
+
+    schedule = tuple(product.observation_schedule)
+    term_exercise_dates = tuple(terms.get("exercise_dates") or ())
+    if term_exercise_dates != schedule:
+        errors.append(
+            "Physical Bermudan swaption term_fields.exercise_dates must exactly preserve the semantic exercise schedule."
+        )
+    if len(schedule) < 2:
+        errors.append(
+            "Physical Bermudan swaption semantics require at least two exercise dates; European exercise is unsupported."
+        )
+    try:
+        if any(
+            not isinstance(item, str)
+            or item != item.strip()
+            or date.fromisoformat(item).isoformat() != item
+            for item in schedule
+        ):
+            raise ValueError
+        maturity_value = terms.get("swap_maturity")
+        if (
+            not isinstance(maturity_value, str)
+            or maturity_value != maturity_value.strip()
+            or date.fromisoformat(maturity_value).isoformat() != maturity_value
+        ):
+            raise ValueError
+        parsed_schedule = tuple(date.fromisoformat(item) for item in schedule)
+        maturity = date.fromisoformat(maturity_value)
+    except ValueError:
+        errors.append(
+            "Physical Bermudan swaption exercise_dates and swap_maturity must be ISO dates."
+        )
+        parsed_schedule = ()
+        maturity = None
+
+    mapping = tuple(terms.get("exercise_to_swap_start") or ())
+    mapped_exercise_dates: list[str] = []
+    mapping_is_well_formed = len(mapping) == len(schedule)
+    for pair in mapping:
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            mapping_is_well_formed = False
+            continue
+        if not all(
+            isinstance(value, str)
+            and value == value.strip()
+            for value in pair
+        ):
+            mapping_is_well_formed = False
+            continue
+        mapped_exercise_dates.append(pair[0])
+        try:
+            exercise_date = date.fromisoformat(pair[0])
+            swap_start = date.fromisoformat(pair[1])
+        except ValueError:
+            mapping_is_well_formed = False
+            continue
+        if exercise_date.isoformat() != pair[0] or swap_start.isoformat() != pair[1]:
+            mapping_is_well_formed = False
+            continue
+        if swap_start < exercise_date:
+            errors.append(
+                "Physical Bermudan swaption swap-start dates cannot precede their exercise dates."
+            )
+        if maturity is not None and swap_start >= maturity:
+            errors.append(
+                "Physical Bermudan swaption co-terminal swap starts must precede swap_maturity."
+            )
+    if not mapping_is_well_formed or tuple(mapped_exercise_dates) != schedule:
+        errors.append(
+            "Physical Bermudan swaption exercise_to_swap_start must map every authored exercise date exactly once and in order."
+        )
+    if parsed_schedule and maturity is not None and parsed_schedule[-1] >= maturity:
+        errors.append(
+            "Physical Bermudan swaption swap_maturity must follow every exercise date."
+        )
+
+    for leg in ("fixed", "floating"):
+        if (
+            terms.get(f"{leg}_roll_convention") == "imm"
+            and terms.get(f"{leg}_stub_rule") not in {"short_first", "short_initial"}
+        ):
+            errors.append(
+                f"Physical Bermudan swaption term_fields.{leg}_roll_convention `imm` "
+                f"requires {leg}_stub_rule `short_first` or `short_initial`."
+            )
+
+    if mapping_is_well_formed:
+        from trellis.conventions.calendar import (
+            BRAZIL,
+            SYDNEY,
+            TARGET,
+            TOKYO,
+            TORONTO,
+            UK_SETTLEMENT,
+            US_SETTLEMENT,
+            WEEKEND_ONLY,
+            ZURICH,
+            BusinessDayAdjustment,
+        )
+
+        calendars = {
+            "WeekendOnly": WEEKEND_ONLY,
+            "weekend_only": WEEKEND_ONLY,
+            "USSettlement": US_SETTLEMENT,
+            "UKSettlement": UK_SETTLEMENT,
+            "TARGET": TARGET,
+            "Tokyo": TOKYO,
+            "Sydney": SYDNEY,
+            "Toronto": TORONTO,
+            "Zurich": ZURICH,
+            "Brazil": BRAZIL,
+        }
+        fixed_calendar_name = terms.get("fixed_calendar_name")
+        fixed_calendar = (
+            calendars.get(fixed_calendar_name)
+            if isinstance(fixed_calendar_name, str)
+            else None
+        )
+        fixed_adjustment_value = terms.get("fixed_business_day_adjustment")
+        try:
+            fixed_adjustment = BusinessDayAdjustment(fixed_adjustment_value)
+        except (TypeError, ValueError):
+            fixed_adjustment = None
+        if fixed_calendar is not None and fixed_adjustment is not None:
+            for pair in mapping:
+                exercise_date = date.fromisoformat(pair[0])
+                swap_start = date.fromisoformat(pair[1])
+                fixed_accrual_start = fixed_calendar.adjust(
+                    swap_start,
+                    fixed_adjustment,
+                )
+                if fixed_accrual_start < exercise_date:
+                    errors.append(
+                        "Physical Bermudan swaption exercise_to_swap_start gaps must keep "
+                        "the first fixed accrual start on or after exercise; seasoned or "
+                        "pre-started adjusted fixed tails are unsupported."
+                    )
+
+        floating_calendar_name = terms.get("floating_calendar_name")
+        calendar = (
+            calendars.get(floating_calendar_name)
+            if isinstance(floating_calendar_name, str)
+            else None
+        )
+        adjustment_value = terms.get("floating_business_day_adjustment")
+        try:
+            adjustment = BusinessDayAdjustment(adjustment_value)
+        except (TypeError, ValueError):
+            adjustment = None
+        fixing_lag = terms.get("floating_fixing_lag_business_days")
+        reset_lag = terms.get("floating_reset_lag_business_days")
+        if (
+            calendar is not None
+            and adjustment is not None
+            and isinstance(fixing_lag, int)
+            and not isinstance(fixing_lag, bool)
+            and isinstance(reset_lag, int)
+            and not isinstance(reset_lag, bool)
+        ):
+            for pair in mapping:
+                exercise_date = date.fromisoformat(pair[0])
+                swap_start = date.fromisoformat(pair[1])
+                adjusted_start = calendar.adjust(swap_start, adjustment)
+                fixing_date = calendar.add_business_days(adjusted_start, -fixing_lag)
+                reset_date = calendar.add_business_days(adjusted_start, -reset_lag)
+                if fixing_date < exercise_date:
+                    errors.append(
+                        "Physical Bermudan swaption exercise_to_swap_start gaps must keep "
+                        "the first floating fixing date on or after exercise."
+                    )
+                if reset_date < exercise_date:
+                    errors.append(
+                        "Physical Bermudan swaption exercise_to_swap_start gaps must keep "
+                        "the first floating reset date on or after exercise."
+                    )

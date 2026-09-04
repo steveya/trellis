@@ -113,6 +113,12 @@ FAMILY_SUPPORT_MODULES = {
     "bermudan_swaption": (
         "trellis.models.bermudan_swaption_tree",
     ),
+    "physical_bermudan_swaption": (
+        "trellis.models.rate_swap_tail",
+        "trellis.models.hull_white_parameters",
+        "trellis.models.trees.algebra",
+        "trellis.models.trees.lattice",
+    ),
     "heston_option": (
         "trellis.models.pde.heston_adi",
         "trellis.models.monte_carlo.stochastic_vol",
@@ -196,6 +202,10 @@ INSTRUMENT_TEST_TARGETS = {
     ),
     "swaption": ("tests/test_agent/test_swaption_demo.py",),
     "bermudan_swaption": ("tests/test_tasks/test_t04_bermudan_swaption.py",),
+    "physical_bermudan_swaption": (
+        "tests/test_models/test_rate_swap_tail.py",
+        "tests/test_agent/test_physical_bermudan_swaption_semantics.py",
+    ),
     "callable_bond": ("tests/test_agent/test_callable_bond.py",),
     "puttable_bond": ("tests/test_tasks/test_t05_puttable_bond.py",),
 }
