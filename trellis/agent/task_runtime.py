@@ -1759,6 +1759,9 @@ def task_to_semantic_contract(task: dict):
     bridged = _physical_bermudan_extension_semantic_contract(task, description)
     if bridged is not None:
         return bridged
+    bridged = _p006_extension_semantic_contract(task, description)
+    if bridged is not None:
+        return bridged
     bridged = _proof_legacy_semantic_contract(task, description)
     if bridged is not None:
         return bridged
@@ -1837,6 +1840,85 @@ def _physical_bermudan_extension_semantic_contract(
         description=description,
         preferred_method="rate_tree",
         **{name: authored_terms[name] for name in strict_term_names},
+    )
+
+
+_P006_EXTENSION_CONTRACT_FIELDS = frozenset(
+    {
+        "product",
+        "currency",
+        "notional",
+        "maturity_tenor",
+        "nth",
+        "basket_names",
+        "basket_weights",
+        "spread",
+        "recovery_rate",
+        "copula_family",
+        "correlation",
+        "day_count",
+        "settlement_rule",
+        "valuation_measure",
+        "marginal_credit_policy",
+        "recovery_policy",
+        "correlation_policy",
+        "discounting_policy",
+        "spread_quote_convention",
+        "spread_to_hazard_mapping",
+        "premium_leg",
+        "spread_risk_bump",
+    }
+)
+
+
+def _p006_extension_semantic_contract(
+    task: Mapping[str, Any],
+    description: str,
+):
+    """Build P006 directly from its authored bounded terminal-protection terms."""
+    if str(task.get("id") or "").strip() != "P006":
+        return None
+    extension_contract = task.get("extension_contract")
+    if not isinstance(extension_contract, Mapping):
+        raise ValueError("P006 requires a structured extension_contract")
+
+    unexpected = tuple(
+        sorted(set(extension_contract).difference(_P006_EXTENSION_CONTRACT_FIELDS))
+    )
+    if unexpected:
+        raise ValueError(
+            "P006 extension_contract contains unsupported authored fields: "
+            + ", ".join(unexpected)
+        )
+
+    authored_terms = benchmark_contract_spec_overrides(task, root=ROOT)
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    return make_nth_to_default_contract(
+        description=description,
+        observation_schedule=(authored_terms["end_date"].isoformat(),),
+        reference_entities=tuple(authored_terms["basket_names"]),
+        reference_weights=tuple(authored_terms["basket_weights"]),
+        trigger_rank=int(authored_terms["n_th"]),
+        credit_spread=float(authored_terms["spread"]),
+        notional=float(authored_terms["notional"]),
+        recovery=float(authored_terms["recovery"]),
+        correlation=float(authored_terms["correlation"]),
+        day_count=extension_contract["day_count"],
+        currency=str(extension_contract["currency"]),
+        copula_family=str(extension_contract["copula_family"]),
+        settlement_rule=str(extension_contract["settlement_rule"]),
+        valuation_measure=str(extension_contract["valuation_measure"]),
+        marginal_credit_policy=str(extension_contract["marginal_credit_policy"]),
+        recovery_policy=str(extension_contract["recovery_policy"]),
+        correlation_policy=str(extension_contract["correlation_policy"]),
+        discounting_policy=str(extension_contract["discounting_policy"]),
+        spread_quote_convention=str(extension_contract["spread_quote_convention"]),
+        spread_to_hazard_mapping=str(extension_contract["spread_to_hazard_mapping"]),
+        premium_leg=str(extension_contract["premium_leg"]),
+        spread_risk_bump=float(extension_contract["spread_risk_bump"]),
+        contract_profile="p006_bounded_terminal_protection_v1",
+        preferred_method="copula",
     )
 
 

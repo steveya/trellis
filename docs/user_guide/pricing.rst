@@ -723,6 +723,19 @@ authority. Heterogeneous name-level credit curves or recoveries, running
 premium legs, stochastic rates/recovery, QMC certification, and general
 portfolio-loss settlement remain unsupported and must fail closed.
 
+P006 is the strict authored example of this boundary. Its typed extension
+contract fixes USD terminal-protection PV, ACT/360, common 40% recovery,
+Gaussian scalar equicorrelation of 0.3, deterministic discounting, no premium
+leg, and a +1 bp representative-spread bump. The selected ``usd_ig`` curve is
+retained as market provenance, but the authored 250 bp spread is the marginal
+hazard authority for this task; ``usd_ois`` remains the discount curve. P006 is
+constructed directly from those structured fields. Missing terms, non-Gaussian
+dependence, correlation matrices, name-level curves or recoveries, and
+non-terminal settlement are rejected before pricing rather than inferred from
+the prose description or spec defaults. The eventual maturity settlement does
+not remove path dependence: the pricer must retain default order and the
+triggering name's aligned exposure until settlement.
+
 For ranked-observation baskets, the generated construction surface is the
 basket resolver, implied-rate conversion, correlated GBM process, generic
 Monte Carlo engine, and ranked-observation state/terminal payoff primitives.

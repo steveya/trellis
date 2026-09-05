@@ -380,12 +380,159 @@ def test_weighted_nth_to_default_overrides_preserve_name_exposure_and_spread():
     assert description is not None
     assert "decimal annual market credit-spread quote" in description
     assert "not a running coupon" in description
+    assert "Maturity: 2029-11-15 (authored tenor 5Y)." in description
+    assert "Market curves: discount=usd_ois, credit=usd_ig." in description
+    assert "Gaussian equicorrelation: 0.3." in description
+    assert "Day count: ACT/360." in description
+    assert "Settlement: terminal_if_rank_triggers_by_maturity." in description
+    assert "Valuation measure: terminal_protection_leg_pv." in description
+    assert "Marginal credit policy: homogeneous_representative_spread." in description
+    assert "Recovery policy: homogeneous_common." in description
+    assert "Correlation policy: gaussian_equicorrelation." in description
+    assert "Discounting policy: deterministic." in description
+    assert "Copula family: gaussian." in description
+    assert (
+        "Spread-to-hazard mapping: credit_triangle_spread_over_one_minus_recovery."
+        in description
+    )
+    assert "Premium leg: none." in description
+    assert "Spread-risk bump: 0.0001." in description
     assert overrides["basket_names"] == ("A", "B", "C", "D")
     assert overrides["basket_weights"] == pytest.approx((0.4, 0.2, 0.2, 0.2))
     assert overrides["spread"] == pytest.approx(0.025)
+    assert overrides["notional"] == pytest.approx(5_000_000.0)
+    assert overrides["recovery"] == pytest.approx(0.4)
+    assert overrides["correlation"] == pytest.approx(0.3)
+    assert overrides["day_count"] is DayCountConvention.ACT_360
     assert overrides["n_names"] == 4
     assert overrides["n_th"] == 2
     assert overrides["end_date"] == date(2029, 11, 15)
+    assert "recovery_rate" not in overrides
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "product",
+        "currency",
+        "notional",
+        "maturity_tenor",
+        "nth",
+        "basket_names",
+        "basket_weights",
+        "spread",
+        "recovery_rate",
+        "copula_family",
+        "correlation",
+        "day_count",
+        "settlement_rule",
+        "valuation_measure",
+        "marginal_credit_policy",
+        "recovery_policy",
+        "correlation_policy",
+        "discounting_policy",
+        "spread_quote_convention",
+        "spread_to_hazard_mapping",
+        "premium_leg",
+        "spread_risk_bump",
+    ),
+)
+def test_p006_strict_contract_rejects_missing_authored_economics(field):
+    task = _extension_tasks()["P006"]
+    del task["extension_contract"][field]
+
+    with pytest.raises(ValueError, match=field):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    (
+        ({"nth": 0}, "nth"),
+        ({"basket_names": ["A", "A", "C", "D"]}, "unique"),
+        ({"basket_weights": [0.4, 0.2, 0.2]}, "same length"),
+        ({"basket_weights": [0.4, 0.2, 0.2, 0.1]}, "sum to 1"),
+        ({"correlation": 1.0}, "correlation"),
+        ({"day_count": "ACT/365F"}, "day_count"),
+        ({"maturity_tenor": "five years"}, "maturity_tenor"),
+        ({"copula_family": "student_t"}, "copula_family"),
+        ({"premium_leg": "running"}, "premium_leg"),
+        ({"spread_risk_bump": 0.001}, "spread_risk_bump"),
+    ),
+)
+def test_p006_strict_contract_rejects_malformed_or_unsupported_shapes(
+    updates,
+    message,
+):
+    task = _extension_tasks()["P006"]
+    task["extension_contract"].update(updates)
+
+    with pytest.raises(ValueError, match=message):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("notional", 4_000_000.0),
+        ("nth", 1),
+        ("basket_names", ["W", "X", "Y", "Z"]),
+        ("basket_weights", [0.25, 0.25, 0.25, 0.25]),
+        ("spread", 0.03),
+        ("recovery_rate", 0.35),
+        ("correlation", 0.25),
+    ),
+)
+def test_p006_strict_contract_rejects_in_range_economic_identity_drift(field, value):
+    task = _extension_tasks()["P006"]
+    task["extension_contract"][field] = value
+
+    with pytest.raises(ValueError, match=field):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    (
+        "correlation_matrix",
+        "name_level_credit_curves",
+        "recovery_vector",
+        "unexpected_default",
+    ),
+)
+def test_p006_strict_contract_rejects_extra_keys(extra_field):
+    task = _extension_tasks()["P006"]
+    task["extension_contract"][extra_field] = ["unsupported"]
+
+    with pytest.raises(ValueError, match=extra_field):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
+def test_p006_strict_contract_rejects_market_scenario_substitution():
+    task = _extension_tasks()["P006"]
+    task["market_scenario_id"] = "flat_usd_equity_vanilla"
+
+    with pytest.raises(ValueError, match="usd_credit_ig"):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
+def test_generic_nth_to_default_keeps_legacy_optional_default_behavior():
+    task = {
+        "id": "GENERIC-NTD",
+        "title": "Generic first-to-default",
+        "extension_contract": {
+            "product": "nth_to_default",
+            "basket_names": ["A", "B"],
+            "maturity_tenor": "1Y",
+        },
+    }
+
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert overrides["n_th"] == 1
+    assert overrides["basket_names"] == ("A", "B")
+    assert "correlation" not in overrides
+    assert "day_count" not in overrides
 
 
 def test_extension_rainbow_overrides_reject_vector_underlier_mismatch():

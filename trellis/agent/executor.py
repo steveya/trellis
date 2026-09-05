@@ -215,8 +215,11 @@ def _comparison_execution_binding_metadata(
     state_dependence = str(
         getattr(product_ir, "state_dependence", "") or ""
     ).strip()
+    payoff_family = str(getattr(product_ir, "payoff_family", "") or "").strip()
     if exercise_style in {"american", "bermudan", "issuer_call", "holder_put"}:
         observation_style = "exercise_schedule"
+    elif state_dependence == "path_dependent" and payoff_family == "nth_to_default":
+        observation_style = "path_dependent"
     elif schedule_dependence:
         observation_style = "fixed_schedule"
     elif state_dependence and state_dependence != "terminal_markov":
@@ -228,7 +231,7 @@ def _comparison_execution_binding_metadata(
         key: value
         for key, value in {
             "derivative_family": getattr(product_ir, "derivative_family", ""),
-            "payoff_family": getattr(product_ir, "payoff_family", ""),
+            "payoff_family": payoff_family,
             "exercise_style": exercise_style,
             "model_family": getattr(product_ir, "model_family", ""),
             "observation_style": observation_style,
@@ -641,6 +644,16 @@ def _hydrate_spec_schema_defaults_from_semantics(
             overrides["basket_weights"] = repr(
                 tuple(float(weight) for weight in basket_weights)
             )
+        for field_name in ("notional", "recovery", "correlation"):
+            value = term_fields.get(field_name)
+            if value is not None:
+                overrides[field_name] = repr(float(value))
+        day_count_default = _enum_default(
+            "DayCountConvention",
+            term_fields.get("day_count"),
+        )
+        if day_count_default is not None:
+            overrides["day_count"] = day_count_default
         spread = term_fields.get("spread")
         if spread is not None:
             overrides["spread"] = repr(float(spread))
