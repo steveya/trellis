@@ -31,7 +31,7 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | 6 | `QUA-1244` | Done | P003 monitoring and numerical controls are authored |
 | 7 | `QUA-1253` | Done | Reusable convention-aware dual-curve Bermudan swap tails |
 | 8 | `QUA-1245` | Done | P005 conventions/model inputs are authored |
-| 9 | `QUA-1246` | In Progress | P006 bounded terminal-protection semantics are authored |
+| 9 | `QUA-1246` | Done | P006 bounded terminal-protection semantics are authored |
 | 10 | `QUA-1247` | Blocked | Seven legacy title-derived bootstraps become named contracts |
 | 11 | `QUA-1251` | Blocked | Reusable variable-coupon callable-bond primitive |
 | 12 | `QUA-1252` | Blocked | Remove the implicit 5% comparison tolerance |
