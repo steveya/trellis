@@ -1144,18 +1144,29 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         if market_spec.get(key) is not None
     }
 
+    scenario_contract = market_scenario_contract_from_task(task, root=ROOT)
+    scenario_constructs_market = (
+        scenario_contract is not None
+        and scenario_contract.constructor_kind != "request_only"
+    )
+
+    def snapshot_component(name: str) -> str | None:
+        if scenario_constructs_market:
+            return None
+        return selected_components.get(name)
+
     market_state = snapshot.to_market_state(
         settlement=DEFAULT_SETTLEMENT,
-        discount_curve=selected_components.get("discount_curve"),
-        forecast_curve=selected_components.get("forecast_curve"),
-        vol_surface=selected_components.get("vol_surface"),
-        credit_curve=selected_components.get("credit_curve"),
-        fx_rate=selected_components.get("fx_rate"),
-        state_space=selected_components.get("state_space"),
-        underlier_spot=selected_components.get("underlier_spot"),
-        local_vol_surface=selected_components.get("local_vol_surface"),
-        jump_parameters=selected_components.get("jump_parameters"),
-        model_parameters=selected_components.get("model_parameters"),
+        discount_curve=snapshot_component("discount_curve"),
+        forecast_curve=snapshot_component("forecast_curve"),
+        vol_surface=snapshot_component("vol_surface"),
+        credit_curve=snapshot_component("credit_curve"),
+        fx_rate=snapshot_component("fx_rate"),
+        state_space=snapshot_component("state_space"),
+        underlier_spot=snapshot_component("underlier_spot"),
+        local_vol_surface=snapshot_component("local_vol_surface"),
+        jump_parameters=snapshot_component("jump_parameters"),
+        model_parameters=snapshot_component("model_parameters"),
     )
     market_state, overlay_metadata = _apply_task_market_scenario(task, market_state)
     had_credit_curve_before = getattr(market_state, "credit_curve", None) is not None
@@ -1529,6 +1540,48 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             exercise_style="american",
             underlying_asset_class="equity",
             option_type="put",
+        )
+
+    if task_id in {"T02", "T17"}:
+        from trellis.agent.semantic_contracts import make_callable_bond_contract
+
+        contract = task.get("benchmark_contract")
+        if not isinstance(contract, Mapping):
+            raise ValueError(
+                f"{task_id} requires its named callable-bond proof fixture"
+            )
+        call_dates = contract.get("call_dates")
+        if not isinstance(call_dates, (list, tuple)) or not call_dates:
+            raise ValueError(f"{task_id} callable-bond fixture requires call_dates")
+        return make_callable_bond_contract(
+            description=description,
+            observation_schedule=tuple(str(value) for value in call_dates),
+            preferred_method="rate_tree",
+            term_fields={
+                key: (
+                    tuple(str(value) for value in contract[key])
+                    if key == "call_dates"
+                    else contract[key]
+                )
+                for key in (
+                    "currency",
+                    "notional",
+                    "coupon",
+                    "start_date",
+                    "end_date",
+                    "call_dates",
+                    "call_price",
+                    "frequency",
+                    "day_count",
+                    "valuation_measure",
+                    "output_unit",
+                    "output_currency",
+                    "coupon_rate_unit",
+                    "call_price_quote_unit",
+                    "tolerance_unit",
+                )
+                if key in contract
+            },
         )
 
     if task_id == "T102":
@@ -2575,6 +2628,11 @@ def run_task(
                     method_results[target_id]["artifact_binding"] = dict(
                         artifact_binding
                     )
+            for target_id, acceptance in dict(
+                cross_validation.get("target_acceptance") or {}
+            ).items():
+                if target_id in method_results:
+                    method_results[target_id]["acceptance"] = dict(acceptance)
             comparison_outputs = {
                 str(target_id): dict(target_outputs)
                 for target_id, target_outputs in dict(
@@ -5214,6 +5272,82 @@ def _cross_validate_comparison_task(
         report["status"] != "passed" for report in output_validation.values()
     )
 
+    resolved_reference_target = reference_target or declared_reference_target
+    target_acceptance: dict[str, dict[str, Any]] = {}
+    for target in comparison_targets:
+        target_id = target.target_id
+        output_acceptance: dict[str, dict[str, Any]] = {}
+        for output_name, report in output_validation.items():
+            if (
+                report["status"] == "insufficient_results"
+                and target_id in priced
+            ):
+                output_status = "insufficient_results"
+            elif target_id in report["missing_targets"]:
+                output_status = "insufficient_results"
+            elif target_id in report["failed_targets"]:
+                output_status = "failed"
+            elif target_id in report["passed_targets"]:
+                output_status = "passed"
+            elif (
+                target_id == report["reference_target"]
+                and target_id in report["values"]
+            ):
+                output_status = "reference"
+            else:
+                output_status = "not_evaluated"
+            output_acceptance[output_name] = {
+                "status": output_status,
+                "reference_target": report["reference_target"],
+                "tolerance_pct": report["tolerance_pct"],
+                "value": report["values"].get(target_id),
+                "deviation_pct": report["deviations_pct"].get(target_id),
+            }
+        output_statuses = {
+            report["status"] for report in output_acceptance.values()
+        }
+        if target.is_reference:
+            target_status = (
+                "insufficient_results"
+                if "insufficient_results" in output_statuses
+                else "reference"
+                if target_id in priced
+                else "not_evaluated"
+            )
+            relation = "reference"
+            role = "reference"
+        else:
+            target_status = (
+                "failed"
+                if "failed" in output_statuses
+                else "insufficient_results"
+                if "insufficient_results" in output_statuses
+                else "passed"
+                if target_id in passed_targets
+                else "failed"
+                if target_id in failed_targets
+                else "insufficient_results"
+                if target_id in priced
+                else "not_evaluated"
+            )
+            relation = comparison_relations.get(target_id, "within_tolerance")
+            role = "comparison"
+        acceptance = {
+            "role": role,
+            "relation": relation,
+            "reference_target": resolved_reference_target,
+            "tolerance_pct": tolerance_pct,
+            "tolerance_unit": configured_targets.get("tolerance_unit"),
+            "output_unit": configured_targets.get("output_unit"),
+            "status": target_status,
+        }
+        output_currency = configured_targets.get("output_currency")
+        if output_currency is not None:
+            acceptance["output_currency"] = output_currency
+        if output_acceptance:
+            acceptance["output_acceptance"] = output_acceptance
+        target_acceptance[target_id] = acceptance
+
     if coherence_failed:
         status = "semantic_artifact_mismatch"
     elif reference_price is None and (
@@ -5243,9 +5377,10 @@ def _cross_validate_comparison_task(
             for target_id, report in artifact_coherence.items()
             if report.get("status") not in _BOUND_ARTIFACT_STATUSES
         },
-        "reference_target": reference_target or declared_reference_target,
+        "reference_target": resolved_reference_target,
         "reference_price": round(reference_price, 10) if reference_price is not None else None,
         "tolerance_pct": tolerance_pct,
+        "target_acceptance": target_acceptance,
         "deviations_pct": deviations,
         "comparison_relations": comparison_relations,
         "passed_targets": passed_targets,

@@ -856,6 +856,18 @@ payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
 decisions are task-runner contracts, not general natural-language parser
 behavior.
 
+Legacy ``T02`` and ``T17`` are executable only through the named
+``usd_fixed_coupon_callable_bond_5pct_2025_2035_v1`` proof fixture and
+``usd_callable_fixed_5pct_proof`` market scenario. Manifest loading hydrates
+the complete economic contract before provenance is recorded; the fixture
+schema version and digest are part of the legacy fingerprint, so changing the
+shared fixture invalidates the checked debt baseline. Runtime construction
+re-anchors the scenario curve, ``as_of``, and settlement date together, binds
+the full callable-bond spec, carries the exact tree/PDE controls into generated
+targets, and records per-target acceptance. The product-specific validator
+rejects altered fields, missing units, changed references, or relaxed controls
+as ``legacy.callable_bond_invalid_contract``.
+
 ``T09`` follows the same fail-closed boundary for a different reason. Its title
 requests a step-up issuer-callable bond but the retained row does not author
 the dated coupon rates or effective dates, and the checked callable-bond

@@ -395,6 +395,7 @@ def construct_market_state_for_scenario(
     vol_surface = market_state.vol_surface
 
     applied_inputs: dict[str, object] = {}
+    applied_inputs["valuation_date"] = curve_value_date.isoformat()
 
     if contract.black_vol is not None:
         vol_surface = FlatVol(float(contract.black_vol))
@@ -538,6 +539,8 @@ def construct_market_state_for_scenario(
 
     constructed_state = replace(
         market_state,
+        as_of=contract.as_of,
+        settlement=curve_value_date,
         discount=discount,
         credit_curve=credit_curve,
         forecast_curves=forecast_curves or None,

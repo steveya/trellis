@@ -1095,16 +1095,27 @@ including model variants, validation bundles, and raw backend identities. A
 strict fresh replay therefore proves three target-coherent artifacts before
 numerical comparison instead of relying on legacy target-label inference.
 
-The retained callable fixed-income proof rows bind their numerical experiments
-explicitly. ``T02`` selects BDT and Hull-White variants of the checked lattice
-binding; ``T17`` selects the Hull-White event-aware theta PDE and Hull-White
-lattice bindings. Both ``T17`` lanes consume the same typed Hull-White parameter set
-from the task comparison regime. Model selection and calibration coordinates
-belong to the valuation target and market parameter set, not to derivative spec
-overrides. Hull-White parameter resolution therefore prefers typed
-``model_family="hull_white"`` payloads (or explicitly named Hull-White sets)
-and ignores unrelated named parameter sets that merely contain a generic
-``sigma`` field.
+The retained callable fixed-income proof rows now bind one named economic
+fixture as well as their numerical experiments. ``T02`` and ``T17`` both price
+100 USD face of the 5% semi-annual fixed-coupon bond issued on 2025-01-15,
+maturing on 2035-01-15, callable at 100 on 2028-01-15, 2030-01-15, and
+2032-01-15 under ACT/365. The named market fixes a 5% flat curve and anchors
+valuation and settlement to 2025-01-15. The task loader preserves the complete
+fixture and its digest, while runtime spec construction binds all eight
+``CallableBondSpec`` fields rather than borrowing economic values from a title
+or generic smoke-test defaults.
+
+``T02`` selects a 200-step BDT lattice with ``sigma=0.20`` and ``a=0.05`` and
+a 200-step Hull-White reference lattice with ``sigma=0.01`` and ``a=0.10``;
+the authored acceptance is 1% of the Hull-White price. ``T17`` compares an
+event-aware Hull-White theta PDE (``theta=0.5``, ``n_r=201``, ``n_t=500``,
+``r_min=-0.10``, ``r_max=0.20``) with that same 200-step Hull-White reference
+under a 0.25% tolerance. Runtime results retain each target's reference role,
+relation, tolerance unit, output unit, and pass/fail status. These proofs do
+not claim PSOR, an external BDT implementation, variable-coupon callable
+bonds, or a generic callable-security engine. Model selection and calibration
+coordinates belong to the valuation target and named market parameter set,
+not to derivative spec overrides.
 
 ``T05`` is intentionally narrower: the former callable-tree "symmetry" target
 was not an independent implementation. The row now proves one explicitly bound

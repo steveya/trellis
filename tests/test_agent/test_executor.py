@@ -1743,6 +1743,40 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_primitive
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_callable_proof_fixture_reaches_the_executable_spec_without_defaults():
+    from trellis.agent.benchmark_contracts import benchmark_spec_overrides
+    from trellis.agent.executor import _make_test_payoff
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.instruments.callable_bond import CallableBondPayoff
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T02"
+    )
+    payoff = _make_test_payoff(
+        CallableBondPayoff,
+        STATIC_SPECS["callable_bond"],
+        date(2025, 1, 15),
+        spec_overrides=benchmark_spec_overrides(task),
+    )
+
+    assert payoff.spec.notional == pytest.approx(100.0)
+    assert payoff.spec.coupon == pytest.approx(0.05)
+    assert payoff.spec.start_date == date(2025, 1, 15)
+    assert payoff.spec.end_date == date(2035, 1, 15)
+    assert tuple(payoff.spec.call_dates) == (
+        date(2028, 1, 15),
+        date(2030, 1, 15),
+        date(2032, 1, 15),
+    )
+    assert payoff.spec.call_price == pytest.approx(100.0)
+    assert payoff.spec.frequency is Frequency.SEMI_ANNUAL
+    assert payoff.spec.day_count is DayCountConvention.ACT_365
+
+
 def test_deterministic_exact_binding_module_materializes_puttable_bond_primitive_composition():
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -2038,9 +2072,14 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
                 "theta": 0.5,
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
+                "n_r": 201,
+                "n_t": 500,
+                "r_min": -0.1,
+                "r_max": 0.2,
             },
             "return price_callable_bond_pde(market_state, spec, "
-            "mean_reversion=0.1, sigma=0.01, theta=0.5)",
+            "mean_reversion=0.1, sigma=0.01, theta=0.5, n_r=201, "
+            "n_t=500, r_min=-0.1, r_max=0.2)",
         ),
         (
             "rate_tree",
@@ -2051,8 +2090,9 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
                 "lattice_model": "hull_white",
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
+                "tree_steps": 200,
             },
-            "mean_reversion=0.1",
+            "n_steps=200",
         ),
     ],
 )

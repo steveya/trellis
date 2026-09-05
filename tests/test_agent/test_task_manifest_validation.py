@@ -62,6 +62,16 @@ def _legacy_terminal_basket_task():
     )
 
 
+def _legacy_callable_task(task_id: str):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+
+
 def _extension_task(task_id: str):
     root = Path(__file__).resolve().parents[2]
     payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
@@ -1132,6 +1142,58 @@ def test_legacy_baseline_path_cannot_escape_the_repository_root(tmp_path):
     assert _codes(report) == {"legacy.baseline_outside_root"}
 
 
+@pytest.mark.parametrize(
+    ("reference_field", "reference_value", "expected_code"),
+    (
+        (
+            "market_scenario_id",
+            "missing_fixture_market",
+            "reference.unknown_market_scenario",
+        ),
+        (
+            "financepy_binding_id",
+            "missing.fixture.binding",
+            "reference.unknown_financepy_binding",
+        ),
+    ),
+)
+def test_legacy_fixture_owned_references_are_validated_after_hydration(
+    tmp_path,
+    reference_field,
+    reference_value,
+    expected_code,
+):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    _write_yaml(tmp_path, "MARKET_SCENARIOS.yaml", {"version": 1, "scenarios": {}})
+    _write_yaml(tmp_path, "FINANCEPY_BINDINGS.yaml", {"version": 1, "bindings": {}})
+    _write_yaml(
+        tmp_path,
+        "TASKS_PROOF_LEGACY.yaml",
+        {
+            "version": 1,
+            "proof_fixtures": {
+                "fixture_with_reference": {reference_field: reference_value}
+            },
+            "tasks": [
+                {
+                    "id": "T900",
+                    "title": "Fixture-owned reference",
+                    "status": "pending",
+                    "proof_fixture_id": "fixture_with_reference",
+                }
+            ],
+        },
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_PROOF_LEGACY.yaml",),
+    )
+
+    assert expected_code in _codes(report)
+
+
 def test_incomplete_selected_legacy_task_stops_before_market_or_build(monkeypatch, tmp_path):
     from scripts import run_tasks
     from trellis.agent.task_manifest_validation import TaskManifestValidationError
@@ -1178,6 +1240,88 @@ def test_authored_legacy_terminal_basket_comparison_is_admitted_for_runtime():
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
     assert_executable_task_selection([_legacy_terminal_basket_task()])
+
+
+@pytest.mark.parametrize("task_id", ("T02", "T17"))
+def test_authored_legacy_callable_comparisons_are_admitted_for_runtime(task_id):
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_legacy_callable_task(task_id)])
+
+
+@pytest.mark.parametrize(
+    ("task_id", "mutation"),
+    (
+        ("T02", lambda task: task.__setitem__("proof_fixture_id", "other")),
+        (
+            "T02",
+            lambda task: task["benchmark_contract"].__setitem__("coupon", 0.06),
+        ),
+        (
+            "T02",
+            lambda task: task.__setitem__("market_scenario_id", "usd_rates_smile"),
+        ),
+        (
+            "T02",
+            lambda task: task["market"]["scenario_contract"].__setitem__(
+                "domestic_rate", 0.06
+            ),
+        ),
+        (
+            "T02",
+            lambda task: task["market"].__setitem__("scenario_digest", "stale"),
+        ),
+        (
+            "T02",
+            lambda task: task.__setitem__("proof_fixture_digest", "stale"),
+        ),
+        (
+            "T02",
+            lambda task: task.__setitem__("proof_fixture_schema_version", 2),
+        ),
+        (
+            "T02",
+            lambda task: task["cross_validate"].__setitem__("tolerance_pct", 5.0),
+        ),
+        (
+            "T02",
+            lambda task: task["cross_validate"].__setitem__(
+                "output_unit", "USD_per_100_face"
+            ),
+        ),
+        (
+            "T02",
+            lambda task: task["cross_validate"]["target_contracts"]["bdt_tree"][
+                "variant_parameters"
+            ].__setitem__("mean_reversion", 0.1),
+        ),
+        (
+            "T17",
+            lambda task: task["cross_validate"]["target_contracts"][
+                "hw_pde_theta"
+            ]["variant_parameters"].__setitem__("theta", 1.0),
+        ),
+        (
+            "T17",
+            lambda task: task["cross_validate"].__setitem__("tolerance_pct", 1.0),
+        ),
+    ),
+)
+def test_legacy_callable_comparisons_reject_contract_drift(task_id, mutation):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_legacy_callable_task(task_id))
+    mutation(task)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.callable_bond_invalid_contract" in _codes(exc_info.value.report)
 
 
 @pytest.mark.parametrize(

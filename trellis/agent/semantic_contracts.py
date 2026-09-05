@@ -2994,6 +2994,7 @@ def make_callable_bond_contract(
     description: str,
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "rate_tree",
+    term_fields: Mapping[str, object] | None = None,
 ) -> SemanticContract:
     """Construct a generic callable-bond semantic contract."""
     schedule = _normalize_schedule(observation_schedule)
@@ -3077,6 +3078,7 @@ def make_callable_bond_contract(
             event_machine_source="derived_from_event_transitions",
             primary_schedule_role="decision_dates",
         ),
+        term_fields=_freeze_mapping(term_fields),
         exercise_style="issuer_call",
         path_dependence="schedule_dependent",
         schedule_dependence=True,
@@ -5423,6 +5425,7 @@ def _rebuild_callable_bond_contract(
         description=contract.description,
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         preferred_method=normalized_method,
+        term_fields=dict(getattr(product, "term_fields", {}) or {}),
     )
 
 

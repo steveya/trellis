@@ -569,3 +569,174 @@ class TestBDTCalibrationConsistency:
         assert tree_zcb == pytest.approx(curve_zcb, rel=1e-4), (
             f"BDT ZCB(5Y)={tree_zcb:.8f}, Curve={curve_zcb:.8f}"
         )
+
+
+def test_t02_and_t17_named_fixture_prices_with_authored_controls():
+    """The manifest rows must execute one shared trade and explicit numerics."""
+    from trellis.agent.benchmark_contracts import benchmark_spec_overrides
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state_for_task
+    from trellis.instruments.callable_bond import CallableBondSpec
+    from trellis.models.callable_bond_pde import price_callable_bond_pde
+    from trellis.models.callable_bond_tree import (
+        price_callable_bond_tree,
+        straight_bond_present_value,
+    )
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T02", "T17"}
+    }
+    for task in tasks.values():
+        assert task["cross_validate"]["output_unit"] == "currency_amount"
+        assert task["cross_validate"]["output_currency"] == "USD"
+    market_state, _ = build_market_state_for_task(tasks["T02"])
+    spec = CallableBondSpec(**benchmark_spec_overrides(tasks["T02"]))
+
+    t02_contracts = tasks["T02"]["cross_validate"]["target_contracts"]
+    bdt_controls = t02_contracts["bdt_tree"]["variant_parameters"]
+    hw_controls = t02_contracts["hull_white_tree"]["variant_parameters"]
+    bdt_price = price_callable_bond_tree(
+        market_state,
+        spec,
+        model=bdt_controls["lattice_model"],
+        mean_reversion=bdt_controls["mean_reversion"],
+        sigma=bdt_controls["sigma"],
+        n_steps=bdt_controls["tree_steps"],
+    )
+    hw_price = price_callable_bond_tree(
+        market_state,
+        spec,
+        model=hw_controls["lattice_model"],
+        mean_reversion=hw_controls["mean_reversion"],
+        sigma=hw_controls["sigma"],
+        n_steps=hw_controls["tree_steps"],
+    )
+
+    t17_contracts = tasks["T17"]["cross_validate"]["target_contracts"]
+    pde_controls = t17_contracts["hw_pde_theta"]["variant_parameters"]
+    pde_price = price_callable_bond_pde(
+        market_state,
+        spec,
+        mean_reversion=pde_controls["mean_reversion"],
+        sigma=pde_controls["sigma"],
+        theta=pde_controls["theta"],
+        n_r=pde_controls["n_r"],
+        n_t=pde_controls["n_t"],
+        r_min=pde_controls["r_min"],
+        r_max=pde_controls["r_max"],
+    )
+    straight_price = straight_bond_present_value(
+        market_state,
+        spec,
+        settlement=market_state.settlement,
+    )
+
+    assert straight_price == pytest.approx(99.5097634759, abs=1e-6)
+    assert bdt_price == pytest.approx(96.3444970526, abs=1e-6)
+    assert hw_price == pytest.approx(96.8252972854, abs=1e-6)
+    assert pde_price == pytest.approx(96.8513691004, abs=1e-6)
+    assert bdt_price <= straight_price
+    assert hw_price <= straight_price
+    assert pde_price <= straight_price
+    assert abs(bdt_price - hw_price) / hw_price * 100.0 <= (
+        tasks["T02"]["cross_validate"]["tolerance_pct"]
+    )
+    assert abs(pde_price - hw_price) / hw_price * 100.0 <= (
+        tasks["T17"]["cross_validate"]["tolerance_pct"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("task_id", "expected_prices", "reference_target", "comparison_target"),
+    (
+        (
+            "T02",
+            {
+                "bdt_tree": 96.3444970526,
+                "hull_white_tree": 96.8252972854,
+            },
+            "hull_white_tree",
+            "bdt_tree",
+        ),
+        (
+            "T17",
+            {
+                "hw_pde_theta": 96.8513691004,
+                "hw_rate_tree": 96.8252972854,
+            },
+            "hw_rate_tree",
+            "hw_pde_theta",
+        ),
+    ),
+)
+def test_t02_and_t17_run_task_preserves_fixture_market_and_acceptance(
+    monkeypatch,
+    tmp_path,
+    task_id,
+    expected_prices,
+    reference_target,
+    comparison_target,
+):
+    """The full deterministic task path must retain the authored proof contract."""
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+    from trellis.engine.payoff_pricer import price_payoff
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+    observed_settlements = []
+
+    def observed_price(payoff, market_state):
+        observed_settlements.append(market_state.settlement)
+        return price_payoff(payoff, market_state)
+
+    monkeypatch.setattr("trellis.agent.executor.REPO_ROOT", tmp_path)
+    result = run_task(
+        task,
+        market_state=None,
+        price_fn=observed_price,
+        task_run_storage_root=tmp_path / "records",
+        task_run_storage_layout="isolated",
+        execution_mode_override="deterministic_replay",
+        recovery_mode="assisted",
+    )
+
+    assert result["success"] is True
+    assert observed_settlements
+    assert set(observed_settlements) == {date(2025, 1, 15)}
+    assert result["cross_validation"]["reference_target"] == reference_target
+    for target_id, expected_price in expected_prices.items():
+        assert result["cross_validation"]["prices"][target_id] == pytest.approx(
+            expected_price,
+            abs=1e-6,
+        )
+        assert result["method_results"][target_id]["acceptance"] == (
+            result["cross_validation"]["target_acceptance"][target_id]
+        )
+
+    acceptance = result["cross_validation"]["target_acceptance"]
+    assert acceptance[reference_target] == {
+        "role": "reference",
+        "relation": "reference",
+        "reference_target": reference_target,
+        "tolerance_pct": task["cross_validate"]["tolerance_pct"],
+        "tolerance_unit": "percent_of_reference_price",
+        "output_unit": "currency_amount",
+        "status": "reference",
+        "output_currency": "USD",
+    }
+    assert acceptance[comparison_target] == {
+        "role": "comparison",
+        "relation": "within_tolerance",
+        "reference_target": reference_target,
+        "tolerance_pct": task["cross_validate"]["tolerance_pct"],
+        "tolerance_unit": "percent_of_reference_price",
+        "output_unit": "currency_amount",
+        "status": "passed",
+        "output_currency": "USD",
+    }

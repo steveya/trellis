@@ -1,4 +1,25 @@
 version: 1
+proof_fixture_version: 1
+proof_fixtures:
+  usd_fixed_coupon_callable_bond_5pct_2025_2035_v1:
+    instrument_type: callable_bond
+    benchmark_contract:
+      product: callable_bond
+      currency: USD
+      notional: 100.0
+      coupon: 0.05
+      start_date: '2025-01-15'
+      end_date: '2035-01-15'
+      call_dates: ['2028-01-15', '2030-01-15', '2032-01-15']
+      call_price: 100.0
+      frequency: semi_annual
+      day_count: ACT/365
+      valuation_measure: holder_present_value
+      output_unit: currency_amount
+      output_currency: USD
+      coupon_rate_unit: decimal_annual_rate
+      call_price_quote_unit: price_points_per_100_par
+      tolerance_unit: percent_of_reference_price
 tasks:
 - id: T01
   title: 'ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical'
@@ -84,19 +105,35 @@ tasks:
   status: done
 - id: T02
   title: 'Callable bond: BDT lognormal vs HW normal tree'
+  description: >-
+    Price the named USD fixed-coupon callable-bond proof fixture with BDT and
+    Hull-White short-rate trees. Report holder present value in USD for 100
+    face and compare BDT with the Hull-White reference under the authored
+    one-percent relative-price tolerance.
+  task_disposition: named_proof_fixture
+  proof_fixture_id: usd_fixed_coupon_callable_bond_5pct_2025_2035_v1
+  market_scenario_id: usd_callable_fixed_5pct_proof
+  validation_policy: invariants_and_cross_method
   construct: lattice
   new_component: bdt_calibration_via_generic_lattice
   cross_validate:
     internal:
     - bdt_tree
     - hull_white_tree
+    reference_target: hull_white_tree
+    relations:
+      bdt_tree: within_tolerance
+    tolerance_pct: 1.0
+    tolerance_unit: percent_of_reference_price
+    output_unit: currency_amount
+    output_currency: USD
     target_contracts:
       bdt_tree:
         method: rate_tree
         route_id: exercise_lattice
         route_family: rate_lattice
         backend_binding_id: trellis.models.trees.algebra.price_on_lattice
-        variant_parameters: {lattice_model: bdt}
+        variant_parameters: {lattice_model: bdt, model_parameter_set: 'callable_fixed_5pct_proof:bdt', mean_reversion: 0.05, sigma: 0.2, tree_steps: 200}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income
         exercise_style: issuer_call
@@ -107,7 +144,7 @@ tasks:
         route_id: exercise_lattice
         route_family: rate_lattice
         backend_binding_id: trellis.models.trees.algebra.price_on_lattice
-        variant_parameters: {lattice_model: hull_white}
+        variant_parameters: {lattice_model: hull_white, model_parameter_set: 'callable_fixed_5pct_proof:hull_white', mean_reversion: 0.1, sigma: 0.01, tree_steps: 200}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income
         exercise_style: issuer_call
@@ -337,32 +374,38 @@ tasks:
   status: pending
 - id: T17
   title: 'Callable bond: HW event-aware theta PDE vs HW tree'
+  description: >-
+    Price the named USD fixed-coupon callable-bond proof fixture with the
+    event-aware Hull-White theta PDE and the Hull-White short-rate tree.
+    Report holder present value in USD for 100 face and compare the PDE with
+    the tree reference under the authored quarter-percent relative-price
+    tolerance.
+  task_disposition: named_proof_fixture
+  proof_fixture_id: usd_fixed_coupon_callable_bond_5pct_2025_2035_v1
+  market_scenario_id: usd_callable_fixed_5pct_proof
+  validation_policy: invariants_and_cross_method
   construct:
   - pde
   - lattice
   new_component: hw_rate_pde_operator
-  comparison_regime:
-    family: short_rate
-    regime_name: t17_hull_white_comparison
-    flat_discount_rate: 0.05
-    flat_sigma: 0.01
-    hull_white_mean_reversion: 0.1
-    ho_lee_mean_reversion: 0.0
-    quote_family: black
-    quote_subject: discount_bond_option
-    quote_convention: flat
-    source_kind: task_comparison_regime
   cross_validate:
     internal:
     - hw_pde_theta
     - hw_rate_tree
+    reference_target: hw_rate_tree
+    relations:
+      hw_pde_theta: within_tolerance
+    tolerance_pct: 0.25
+    tolerance_unit: percent_of_reference_price
+    output_unit: currency_amount
+    output_currency: USD
     target_contracts:
       hw_pde_theta:
         method: pde_solver
         route_id: pde_theta_1d
         route_family: pde_solver
         backend_binding_id: trellis.models.callable_bond_pde.price_callable_bond_pde
-        variant_parameters: {pricing_method: pde_solver, theta: 0.5, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
+        variant_parameters: {pricing_method: pde_solver, theta: 0.5, model_parameter_set: 'callable_fixed_5pct_proof:hull_white', mean_reversion: 0.1, sigma: 0.01, n_r: 201, n_t: 500, r_min: -0.1, r_max: 0.2}
         validation_bundle_id: pde_solver:callable_bond
         payoff_family: callable_fixed_income
         exercise_style: issuer_call
@@ -373,7 +416,7 @@ tasks:
         route_id: exercise_lattice
         route_family: rate_lattice
         backend_binding_id: trellis.models.trees.algebra.price_on_lattice
-        variant_parameters: {pricing_method: rate_tree, lattice_model: hull_white, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
+        variant_parameters: {pricing_method: rate_tree, lattice_model: hull_white, model_parameter_set: 'callable_fixed_5pct_proof:hull_white', mean_reversion: 0.1, sigma: 0.01, tree_steps: 200}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income
         exercise_style: issuer_call

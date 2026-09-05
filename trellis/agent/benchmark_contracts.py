@@ -146,6 +146,7 @@ _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
     "cliquet_option": "cliquet_option",
     "variance_swap": "variance_swap",
     "rainbow_option": "basket_option",
+    "callable_bond": "callable_bond",
     "physical_bermudan_swaption": "physical_bermudan_swaption",
 }
 
@@ -267,7 +268,14 @@ def benchmark_request_description(
         contract = strict_p006_contract
 
     product = str(contract.get("product") or "").strip().lower()
-    if str(task.get("id") or "").strip() == "T102" and product == "rainbow_option":
+    if (
+        product == "callable_bond"
+        and str(task.get("id") or "").strip() in {"T02", "T17"}
+        and str(task.get("proof_fixture_id") or "").strip()
+        == "usd_fixed_coupon_callable_bond_5pct_2025_2035_v1"
+    ):
+        title = "USD fixed-coupon callable bond proof"
+    elif str(task.get("id") or "").strip() == "T102" and product == "rainbow_option":
         title = "Two-asset European terminal best-of call"
     else:
         title = str(task.get("title") or "Benchmark pricing task").strip()
@@ -405,6 +413,8 @@ def benchmark_spec_overrides(
         )
     elif product == "physical_bermudan_swaption":
         overrides.update(_physical_bermudan_swaption_overrides(contract))
+    elif product == "callable_bond":
+        overrides.update(_callable_bond_overrides(contract))
     elif product == "barrier_option":
         overrides.update(_barrier_option_overrides(contract, valuation_date=valuation_date))
     elif product == "digital_option":
@@ -764,6 +774,8 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
         return "Price a rainbow basket option under the declared benchmark surface."
     if product == "nth_to_default":
         return "Price terminal nth-to-default protection under the declared weighted basket contract."
+    if product == "callable_bond":
+        return "Price the bounded issuer-callable fixed-coupon bond under the declared short-rate proof market."
     return str(contract.get("product") or "Price the declared benchmark contract.")
 
 
@@ -814,6 +826,26 @@ def _benchmark_detail_lines(
                     f"Spread-risk bump: {contract['spread_risk_bump']}.",
                 ]
             )
+        return lines
+    if product == "callable_bond":
+        call_dates = _parse_date_sequence(contract.get("call_dates"))
+        start_date = _parse_date(contract.get("start_date"))
+        end_date = _parse_date(contract.get("end_date"))
+        lines.extend(
+            [
+                f"Notional: {contract.get('notional')} {contract.get('currency')}.",
+                f"Coupon: {contract.get('coupon')} paid {contract.get('frequency')}.",
+                f"Start date: {start_date.isoformat() if start_date else contract.get('start_date')}.",
+                f"Maturity date: {end_date.isoformat() if end_date else contract.get('end_date')}.",
+                "Issuer call dates: "
+                + ", ".join(item.isoformat() for item in call_dates)
+                + f" at {contract.get('call_price')}.",
+                f"Day count: {contract.get('day_count')}.",
+                f"Valuation measure: {contract.get('valuation_measure')}.",
+                "Output: "
+                f"{contract.get('output_unit')} in {contract.get('output_currency')}.",
+            ]
+        )
         return lines
     if product == "fx_vanilla":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
@@ -1337,6 +1369,73 @@ def _physical_bermudan_swaption_overrides(
             + ", ".join(dict.fromkeys(missing))
         )
     return overrides
+
+
+def _callable_bond_overrides(contract: Mapping[str, Any]) -> dict[str, Any]:
+    """Project a complete authored callable-bond contract onto its spec schema."""
+    required = (
+        "notional",
+        "coupon",
+        "start_date",
+        "end_date",
+        "call_dates",
+        "call_price",
+        "frequency",
+        "day_count",
+    )
+    missing = [
+        field
+        for field in required
+        if contract.get(field) is None or contract.get(field) == ""
+    ]
+    if missing:
+        raise ValueError(
+            "callable_bond requires authored fields: " + ", ".join(missing)
+        )
+
+    notional = _float_or_none(contract.get("notional"))
+    coupon = _float_or_none(contract.get("coupon"))
+    call_price = _float_or_none(contract.get("call_price"))
+    start_date = _parse_date(contract.get("start_date"))
+    end_date = _parse_date(contract.get("end_date"))
+    raw_call_dates = contract.get("call_dates")
+    call_dates = _parse_date_sequence(raw_call_dates)
+    frequency = _frequency(contract.get("frequency"))
+    day_count = _day_count(contract.get("day_count"))
+    if notional is None or not math.isfinite(notional) or notional <= 0.0:
+        raise ValueError("callable_bond notional must be a positive finite number")
+    if coupon is None or not math.isfinite(coupon) or coupon < 0.0:
+        raise ValueError("callable_bond coupon must be a non-negative finite number")
+    if call_price is None or not math.isfinite(call_price) or call_price <= 0.0:
+        raise ValueError("callable_bond call_price must be a positive finite number")
+    if start_date is None or end_date is None or start_date >= end_date:
+        raise ValueError("callable_bond requires ordered ISO start_date and end_date")
+    if (
+        not isinstance(raw_call_dates, (list, tuple))
+        or not call_dates
+        or len(call_dates) != len(raw_call_dates)
+        or tuple(sorted(set(call_dates))) != call_dates
+    ):
+        raise ValueError(
+            "callable_bond call_dates must be a non-empty strictly increasing "
+            "ISO-date sequence"
+        )
+    if any(call_date <= start_date or call_date >= end_date for call_date in call_dates):
+        raise ValueError("callable_bond call_dates must lie strictly inside the bond term")
+    if frequency is None:
+        raise ValueError("callable_bond frequency is unsupported")
+    if day_count is None:
+        raise ValueError("callable_bond day_count is unsupported")
+    return {
+        "notional": notional,
+        "coupon": coupon,
+        "start_date": start_date,
+        "end_date": end_date,
+        "call_dates": call_dates,
+        "call_price": call_price,
+        "frequency": frequency,
+        "day_count": day_count,
+    }
 
 
 def _barrier_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
