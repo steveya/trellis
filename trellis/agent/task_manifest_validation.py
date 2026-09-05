@@ -173,13 +173,31 @@ def audit_task_manifests(
         for index, task in tasks:
             path = f"tasks[{index}]"
             task_id = _text(task.get("id"))
+            validation_task = task
+            if manifest_name == LEGACY_TASKS_MANIFEST:
+                legacy_tasks.append(task)
+                try:
+                    validation_task = materialize_task_proof_fixture(
+                        task,
+                        fixtures=proof_fixtures,
+                    )
+                except ValueError as exc:
+                    blocking.append(
+                        _issue(
+                            manifest_name,
+                            "manifest.invalid_proof_fixture_reference",
+                            str(exc),
+                            task_id=task_id,
+                            path=f"{path}.proof_fixture_id",
+                        )
+                    )
             if task_id:
                 located_ids[task_id].append((manifest_name, path))
             blocking.extend(_validate_common(manifest_name, task, path))
             blocking.extend(
                 _validate_references(
                     manifest_name,
-                    task,
+                    validation_task,
                     path,
                     scenario_ids=scenario_ids,
                     binding_ids=binding_ids,
@@ -198,23 +216,6 @@ def audit_task_manifests(
             elif manifest_name == "FRAMEWORK_TASKS.yaml":
                 blocking.extend(_validate_framework_task(manifest_name, task, path))
             elif manifest_name == LEGACY_TASKS_MANIFEST:
-                legacy_tasks.append(task)
-                validation_task = task
-                try:
-                    validation_task = materialize_task_proof_fixture(
-                        task,
-                        fixtures=proof_fixtures,
-                    )
-                except ValueError as exc:
-                    blocking.append(
-                        _issue(
-                            manifest_name,
-                            "manifest.invalid_proof_fixture_reference",
-                            str(exc),
-                            task_id=task_id,
-                            path=f"{path}.proof_fixture_id",
-                        )
-                    )
                 legacy.extend(
                     _validate_legacy_task(
                         manifest_name,

@@ -5323,6 +5323,8 @@ def _cross_validate_comparison_task(
                 if target_id in passed_targets
                 else "failed"
                 if target_id in failed_targets
+                else "insufficient_results"
+                if target_id in priced
                 else "not_evaluated"
             )
             relation = comparison_relations.get(target_id, "within_tolerance")

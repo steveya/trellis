@@ -3452,6 +3452,35 @@ def test_cross_validate_comparison_task_respects_directional_relations():
         },
     }
 
+    missing_reference = _cross_validate_comparison_task(
+        comparison_targets,
+        {
+            **live_results,
+            "black_scholes": SimpleNamespace(success=False, payoff_cls=None),
+        },
+        market_state=object(),
+        configured_targets={
+            "tolerance_pct": 0.5,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+        price_fn=lambda payoff, market_state: payoff.price,
+    )
+
+    assert missing_reference["status"] == "insufficient_results"
+    assert missing_reference["prices"] == {
+        "tree_upper": 101.0,
+        "tree_lower": 99.7,
+    }
+    assert missing_reference["target_acceptance"]["tree_upper"]["status"] == (
+        "insufficient_results"
+    )
+    assert missing_reference["target_acceptance"]["tree_lower"]["status"] == (
+        "insufficient_results"
+    )
+
 
 def test_cross_validate_comparison_task_validates_configured_native_outputs():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract

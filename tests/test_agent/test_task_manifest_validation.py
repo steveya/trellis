@@ -1142,6 +1142,58 @@ def test_legacy_baseline_path_cannot_escape_the_repository_root(tmp_path):
     assert _codes(report) == {"legacy.baseline_outside_root"}
 
 
+@pytest.mark.parametrize(
+    ("reference_field", "reference_value", "expected_code"),
+    (
+        (
+            "market_scenario_id",
+            "missing_fixture_market",
+            "reference.unknown_market_scenario",
+        ),
+        (
+            "financepy_binding_id",
+            "missing.fixture.binding",
+            "reference.unknown_financepy_binding",
+        ),
+    ),
+)
+def test_legacy_fixture_owned_references_are_validated_after_hydration(
+    tmp_path,
+    reference_field,
+    reference_value,
+    expected_code,
+):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    _write_yaml(tmp_path, "MARKET_SCENARIOS.yaml", {"version": 1, "scenarios": {}})
+    _write_yaml(tmp_path, "FINANCEPY_BINDINGS.yaml", {"version": 1, "bindings": {}})
+    _write_yaml(
+        tmp_path,
+        "TASKS_PROOF_LEGACY.yaml",
+        {
+            "version": 1,
+            "proof_fixtures": {
+                "fixture_with_reference": {reference_field: reference_value}
+            },
+            "tasks": [
+                {
+                    "id": "T900",
+                    "title": "Fixture-owned reference",
+                    "status": "pending",
+                    "proof_fixture_id": "fixture_with_reference",
+                }
+            ],
+        },
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_PROOF_LEGACY.yaml",),
+    )
+
+    assert expected_code in _codes(report)
+
+
 def test_incomplete_selected_legacy_task_stops_before_market_or_build(monkeypatch, tmp_path):
     from scripts import run_tasks
     from trellis.agent.task_manifest_validation import TaskManifestValidationError
