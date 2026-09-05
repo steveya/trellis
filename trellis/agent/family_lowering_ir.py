@@ -684,6 +684,22 @@ class NthToDefaultIR(BaseFamilyLoweringIR):
     reference_entities: tuple[str, ...] = ()
     reference_weights: tuple[float, ...] = ()
     credit_spread: float | None = None
+    notional: float | None = None
+    recovery: float | None = None
+    correlation: float | None = None
+    day_count: str = ""
+    currency: str = ""
+    copula_family: str = "gaussian"
+    settlement_rule: str = "terminal_if_rank_triggers_by_maturity"
+    valuation_measure: str = "terminal_protection_leg_pv"
+    marginal_credit_policy: str = ""
+    recovery_policy: str = ""
+    correlation_policy: str = ""
+    discounting_policy: str = ""
+    spread_quote_convention: str = ""
+    spread_to_hazard_mapping: str = ""
+    premium_leg: str = "none"
+    contract_profile: str = ""
     spread_risk_bump: float = 1.0e-4
     observation_dates: tuple[str, ...] = ()
     observable_ids: tuple[str, ...] = ()
@@ -2809,6 +2825,9 @@ def _build_nth_to_default_ir(
     reference_weights = explicit_weights or tuple(1.0 for _ in reference_entities)
     credit_spread_value = term_fields.get("spread")
     credit_spread = None if credit_spread_value is None else float(credit_spread_value)
+    notional_value = term_fields.get("notional")
+    recovery_value = term_fields.get("recovery")
+    correlation_value = term_fields.get("correlation")
 
     return NthToDefaultIR(
         route_id=route_id,
@@ -2825,6 +2844,22 @@ def _build_nth_to_default_ir(
         reference_entities=reference_entities,
         reference_weights=reference_weights,
         credit_spread=credit_spread,
+        notional=None if notional_value is None else float(notional_value),
+        recovery=None if recovery_value is None else float(recovery_value),
+        correlation=None if correlation_value is None else float(correlation_value),
+        day_count=str(term_fields.get("day_count") or ""),
+        currency=str(term_fields.get("currency") or reporting_currency or ""),
+        copula_family=str(term_fields.get("copula_family") or "gaussian"),
+        settlement_rule=str(term_fields.get("settlement_rule") or ""),
+        valuation_measure=str(term_fields.get("valuation_measure") or ""),
+        marginal_credit_policy=str(term_fields.get("marginal_credit_policy") or ""),
+        recovery_policy=str(term_fields.get("recovery_policy") or ""),
+        correlation_policy=str(term_fields.get("correlation_policy") or ""),
+        discounting_policy=str(term_fields.get("discounting_policy") or ""),
+        spread_quote_convention=str(term_fields.get("spread_quote_convention") or ""),
+        spread_to_hazard_mapping=str(term_fields.get("spread_to_hazard_mapping") or ""),
+        premium_leg=str(term_fields.get("premium_leg") or ""),
+        contract_profile=str(term_fields.get("contract_profile") or ""),
         spread_risk_bump=float(term_fields.get("spread_risk_bump") or 1.0e-4),
         observation_dates=tuple(product.timeline.observation_dates or product.observation_schedule),
         observable_ids=tuple(item.observable_id for item in product.observables),

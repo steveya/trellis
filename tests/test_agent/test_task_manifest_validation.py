@@ -679,6 +679,184 @@ def test_p005_requests_price_without_native_greeks(tmp_path):
     assert "extension.bermudan_swaption_invalid_output_request" in _codes(report)
 
 
+def test_p006_exact_terminal_protection_contract_passes_manifest_audit(tmp_path):
+    report = _audit_single_extension_task(tmp_path, _extension_task("P006"))
+
+    assert not {
+        issue.code
+        for issue in report.blocking_issues
+        if issue.code.startswith("extension.nth_to_default_")
+    }
+
+
+@pytest.mark.parametrize(
+    "description",
+    (
+        "Price an nth-to-default basket with custom weights.",
+        "Price the P006 basket including a running premium leg.",
+        "Price the P006 basket and return DV01.",
+    ),
+)
+def test_p006_rejects_vague_or_conflicting_description(tmp_path, description):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P006"))
+    task["description"] = description
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.nth_to_default_invalid_description" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    (
+        "product",
+        "currency",
+        "notional",
+        "maturity_tenor",
+        "nth",
+        "basket_names",
+        "basket_weights",
+        "spread",
+        "recovery_rate",
+        "copula_family",
+        "correlation",
+        "day_count",
+        "settlement_rule",
+        "valuation_measure",
+        "marginal_credit_policy",
+        "recovery_policy",
+        "correlation_policy",
+        "discounting_policy",
+        "spread_quote_convention",
+        "spread_to_hazard_mapping",
+        "premium_leg",
+        "spread_risk_bump",
+    ),
+)
+def test_p006_requires_every_terminal_protection_input(tmp_path, missing_field):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P006"))
+    task["extension_contract"].pop(missing_field, None)
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.nth_to_default_missing_field" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("currency", "EUR"),
+        ("notional", 0.0),
+        ("notional", True),
+        ("maturity_tenor", "10Y"),
+        ("nth", 0),
+        ("nth", 5),
+        ("nth", True),
+        ("basket_names", ["A", "A", "C", "D"]),
+        ("basket_names", ["A", "B", "C"]),
+        ("basket_weights", [0.4, 0.2, 0.4]),
+        ("basket_weights", [0.4, 0.2, 0.2, 0.1]),
+        ("basket_weights", [0.4, 0.2, 0.2, -0.2]),
+        ("spread", 1.0),
+        ("spread", True),
+        ("recovery_rate", 1.0),
+        ("recovery_rate", True),
+        ("copula_family", "student_t"),
+        ("correlation", 1.0),
+        ("correlation", True),
+        ("day_count", "ACT/365F"),
+        ("settlement_rule", "payment_at_default"),
+        ("valuation_measure", "trade_npv"),
+        ("marginal_credit_policy", "heterogeneous_name_curves"),
+        ("recovery_policy", "name_level"),
+        ("correlation_policy", "correlation_matrix"),
+        ("discounting_policy", "stochastic"),
+        ("spread_quote_convention", "running_coupon"),
+        ("spread_to_hazard_mapping", "bootstrap"),
+        ("premium_leg", "running"),
+        ("spread_risk_bump", 0.0),
+        ("spread_risk_bump", True),
+    ),
+)
+def test_p006_rejects_economic_and_policy_drift(tmp_path, field, value):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P006"))
+    task["extension_contract"][field] = value
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.nth_to_default_invalid_contract" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    (
+        "correlation_matrix",
+        "name_level_credit_curves",
+        "recovery_vector",
+        "running_premium_leg",
+        "unexpected_default",
+    ),
+)
+def test_p006_rejects_unsupported_or_extra_contract_keys(tmp_path, extra_field):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P006"))
+    task["extension_contract"][extra_field] = [0.1, 0.2]
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.nth_to_default_invalid_contract" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task["cross_validate"].__setitem__(
+            "internal", ["weighted_rank_analytical"]
+        ),
+        lambda task: task["cross_validate"].__setitem__("tolerance_pct", 2.99),
+        lambda task: task["cross_validate"].__setitem__(
+            "output_tolerances_pct", {"spread_cs01": 14.99}
+        ),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_analytical"
+        ].__setitem__("route_id", "nth_to_default_analytical"),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_analytical"
+        ].__setitem__(
+            "backend_binding_id", "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+        ),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_monte_carlo"
+        ].__setitem__("route_id", "nth_to_default_monte_carlo"),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_monte_carlo"
+        ]["spec_overrides"].__setitem__("n_paths", 100_000),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_monte_carlo"
+        ]["spec_overrides"].__setitem__("n_paths", True),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "weighted_rank_monte_carlo"
+        ]["spec_overrides"].__setitem__("seed", 7),
+    ),
+)
+def test_p006_rejects_target_binding_control_and_tolerance_drift(tmp_path, mutation):
+    from copy import deepcopy
+
+    task = deepcopy(_extension_task("P006"))
+    mutation(task)
+
+    report = _audit_single_extension_task(tmp_path, task)
+
+    assert "extension.nth_to_default_invalid_targets" in _codes(report)
+
+
 def test_tolerances_accept_exact_zero_and_reject_non_finite_values(tmp_path):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 

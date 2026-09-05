@@ -2101,6 +2101,204 @@ def test_weighted_nth_to_default_contract_preserves_name_aligned_loss_and_spread
     assert contract.product.settlement_rule == "terminal_if_rank_triggers_by_maturity"
 
 
+def _bounded_p006_semantic_contract(**overrides):
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    kwargs = {
+        "description": "Authored P006 weighted terminal second-to-default protection",
+        "observation_schedule": ("2029-11-15",),
+        "reference_entities": ("A", "B", "C", "D"),
+        "reference_weights": (0.4, 0.2, 0.2, 0.2),
+        "trigger_rank": 2,
+        "credit_spread": 0.025,
+        "notional": 5_000_000.0,
+        "recovery": 0.4,
+        "correlation": 0.3,
+        "day_count": "ACT/360",
+        "currency": "USD",
+        "copula_family": "gaussian",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+        "premium_leg": "none",
+        "spread_risk_bump": 1.0e-4,
+        "contract_profile": "p006_bounded_terminal_protection_v1",
+    }
+    kwargs.update(overrides)
+    return make_nth_to_default_contract(**kwargs)
+
+
+def test_bounded_nth_to_default_contract_preserves_exact_economics_across_methods():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _bounded_p006_semantic_contract()
+    assert validate_semantic_contract(contract).ok
+
+    expected_terms = dict(contract.product.term_fields)
+    assert expected_terms["notional"] == pytest.approx(5_000_000.0)
+    assert expected_terms["recovery"] == pytest.approx(0.4)
+    assert expected_terms["correlation"] == pytest.approx(0.3)
+    assert expected_terms["day_count"] == "ACT_360"
+    assert expected_terms["copula_family"] == "gaussian"
+    assert expected_terms["premium_leg"] == "none"
+    assert contract.product.schedule_dependence is True
+    assert contract.product.path_dependence == "path_dependent"
+    assert contract.product.state_dependence == "path_dependent"
+    assert "supersedes" in contract.market_data.required_inputs[1].description
+
+    for method, pricing_mode in (("copula", "analytical"), ("monte_carlo", "monte_carlo")):
+        compiled = compile_semantic_contract(contract, preferred_method=method)
+        terms = dict(compiled.contract.product.term_fields)
+        family_ir = compiled.dsl_lowering.family_ir
+
+        assert terms == expected_terms
+        assert family_ir.pricing_mode == pricing_mode
+        assert family_ir.notional == pytest.approx(5_000_000.0)
+        assert family_ir.recovery == pytest.approx(0.4)
+        assert family_ir.correlation == pytest.approx(0.3)
+        assert family_ir.day_count == "ACT_360"
+        assert family_ir.currency == "USD"
+        assert family_ir.copula_family == "gaussian"
+        assert family_ir.settlement_rule == "terminal_if_rank_triggers_by_maturity"
+        assert family_ir.valuation_measure == "terminal_protection_leg_pv"
+        assert family_ir.marginal_credit_policy == "homogeneous_representative_spread"
+        assert family_ir.recovery_policy == "homogeneous_common"
+        assert family_ir.correlation_policy == "gaussian_equicorrelation"
+        assert family_ir.discounting_policy == "deterministic"
+        assert family_ir.spread_to_hazard_mapping == "credit_triangle_spread_over_one_minus_recovery"
+        assert family_ir.premium_leg == "none"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("day_count", None, "day_count"),
+        ("settlement_rule", "pay_at_default", "settlement_rule"),
+        ("premium_leg", "running", "premium_leg"),
+        ("name_level_credit_curves", ("curve_a", "curve_b"), "name-level credit"),
+        ("recovery_rates", (0.4, 0.35, 0.4, 0.4), "recovery vectors"),
+        ("correlation_matrix", ((1.0, 0.3), (0.3, 1.0)), "correlation matrices"),
+        ("unexpected_default", "x", "unexpected_default"),
+    ),
+)
+def test_bounded_nth_to_default_semantic_validation_rejects_unsupported_shape(
+    field,
+    value,
+    message,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _bounded_p006_semantic_contract()
+    malformed = replace(
+        contract,
+        product=replace(
+            contract.product,
+            term_fields={**dict(contract.product.term_fields), field: value},
+        ),
+    )
+
+    report = validate_semantic_contract(malformed)
+
+    assert report.ok is False
+    assert any(message in error for error in report.errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("notional", 4_000_000.0),
+        ("spread", 0.03),
+        ("recovery", 0.35),
+        ("correlation", 0.25),
+        ("basket_weights", (0.25, 0.25, 0.25, 0.25)),
+    ),
+)
+def test_bounded_nth_to_default_semantic_validation_rejects_identity_drift(
+    field,
+    value,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _bounded_p006_semantic_contract()
+    malformed = replace(
+        contract,
+        product=replace(
+            contract.product,
+            term_fields={**dict(contract.product.term_fields), field: value},
+        ),
+    )
+
+    report = validate_semantic_contract(malformed)
+
+    assert report.ok is False
+    assert any(field in error for error in report.errors)
+
+
+@pytest.mark.parametrize("trigger_rank", (0, True, "2", 2.5))
+def test_bounded_nth_to_default_constructor_rejects_coerced_rank(trigger_rank):
+    with pytest.raises(ValueError, match="trigger_rank"):
+        _bounded_p006_semantic_contract(trigger_rank=trigger_rank)
+
+
+@pytest.mark.parametrize(
+    "observation_schedule",
+    (("2030-11-15",), ("2028-11-15", "2029-11-15")),
+)
+def test_bounded_nth_to_default_constructor_rejects_maturity_drift(
+    observation_schedule,
+):
+    with pytest.raises(ValueError, match="observation_schedule"):
+        _bounded_p006_semantic_contract(observation_schedule=observation_schedule)
+
+
+def test_bounded_nth_to_default_validation_rejects_maturity_drift():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _bounded_p006_semantic_contract()
+    drifted_schedule = ("2030-11-15",)
+    malformed = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observation_schedule=drifted_schedule,
+            timeline=replace(
+                contract.product.timeline,
+                observation_dates=drifted_schedule,
+                settlement_dates=drifted_schedule,
+                state_update_dates=drifted_schedule,
+            ),
+        ),
+    )
+
+    report = validate_semantic_contract(malformed)
+
+    assert report.ok is False
+    assert any("observation_schedule" in error for error in report.errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("currency", "usd"),
+        ("day_count", "ACT_360"),
+        ("copula_family", "Gaussian"),
+        ("premium_leg", " none "),
+    ),
+)
+def test_bounded_nth_to_default_constructor_rejects_authored_string_drift(
+    field,
+    value,
+):
+    with pytest.raises(ValueError, match=field):
+        _bounded_p006_semantic_contract(**{field: value})
+
+
 @pytest.mark.parametrize(
     ("reference_entities", "reference_weights", "message"),
     [

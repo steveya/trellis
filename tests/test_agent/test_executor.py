@@ -433,6 +433,44 @@ def test_reused_artifact_preserves_its_own_full_target_contract():
     )
 
 
+def test_comparison_binding_classifies_nth_to_default_path_state_as_path_dependent():
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=SimpleNamespace(method="copula"),
+        generation_plan=SimpleNamespace(),
+        product_ir=SimpleNamespace(
+            exercise_style="none",
+            schedule_dependence=True,
+            state_dependence="path_dependent",
+            payoff_family="nth_to_default",
+            model_family="credit_copula",
+        ),
+        request_metadata=None,
+    )
+
+    assert binding["selected_semantic_axes"]["observation_style"] == "path_dependent"
+
+
+def test_comparison_binding_keeps_other_scheduled_path_products_fixed_schedule():
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        generation_plan=SimpleNamespace(),
+        product_ir=SimpleNamespace(
+            exercise_style="none",
+            schedule_dependence=True,
+            state_dependence="path_dependent",
+            payoff_family="asian_option",
+            model_family="equity_diffusion",
+        ),
+        request_metadata=None,
+    )
+
+    assert binding["selected_semantic_axes"]["observation_style"] == "fixed_schedule"
+
+
 def test_fresh_artifact_replaces_request_copy_with_its_own_target_contract():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import _record_fresh_comparison_binding
@@ -1035,6 +1073,58 @@ def test_hydrate_spec_schema_defaults_from_weighted_nth_to_default_semantics():
     assert 'requirements = {"discount_curve"}' in skeleton
     assert "if self._spec.spread is None:" in skeleton
     assert 'requirements.add("credit_curve")' in skeleton
+
+
+def test_hydrate_spec_schema_defaults_from_bounded_p006_semantics():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _hydrate_spec_schema_defaults_from_semantics,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="Authored P006 contract",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("A", "B", "C", "D"),
+        reference_weights=(0.4, 0.2, 0.2, 0.2),
+        trigger_rank=2,
+        credit_spread=0.025,
+        notional=5_000_000.0,
+        recovery=0.4,
+        correlation=0.3,
+        day_count="ACT/360",
+        currency="USD",
+        copula_family="gaussian",
+        settlement_rule="terminal_if_rank_triggers_by_maturity",
+        valuation_measure="terminal_protection_leg_pv",
+        marginal_credit_policy="homogeneous_representative_spread",
+        recovery_policy="homogeneous_common",
+        correlation_policy="gaussian_equicorrelation",
+        discounting_policy="deterministic",
+        spread_quote_convention="decimal_annual_representative_single_name",
+        spread_to_hazard_mapping="credit_triangle_spread_over_one_minus_recovery",
+        premium_leg="none",
+        spread_risk_bump=1.0e-4,
+        contract_profile="p006_bounded_terminal_protection_v1",
+    )
+
+    hydrated = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["nth_to_default"],
+        semantic_contract=contract,
+    )
+    defaults = {field.name: field.default for field in hydrated.fields}
+
+    assert defaults["notional"] == "5000000.0"
+    assert defaults["recovery"] == "0.4"
+    assert defaults["correlation"] == "0.3"
+    assert defaults["day_count"] == "DayCountConvention.ACT_360"
+
+    skeleton = _generate_skeleton(hydrated, contract.description)
+    assert "notional: float = 5000000.0" in skeleton
+    assert "correlation: float = 0.3" in skeleton
+    assert "recovery: float = 0.4" in skeleton
+    assert "day_count: DayCountConvention = DayCountConvention.ACT_360" in skeleton
 
 
 def test_deterministic_exact_binding_module_materializes_swaption_resolver_and_raw_kernel():

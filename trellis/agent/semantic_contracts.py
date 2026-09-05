@@ -4298,6 +4298,99 @@ def make_credit_default_swap_contract(
     )
 
 
+_P006_NTH_TO_DEFAULT_CONTRACT_PROFILE = "p006_bounded_terminal_protection_v1"
+_P006_NTH_TO_DEFAULT_EXACT_TERMS = MappingProxyType(
+    {
+        "day_count": "ACT_360",
+        "currency": "USD",
+        "copula_family": "gaussian",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+        "premium_leg": "none",
+    }
+)
+_P006_NTH_TO_DEFAULT_EXACT_NUMERIC_TERMS = MappingProxyType(
+    {
+        "notional": 5_000_000.0,
+        "spread": 0.025,
+        "recovery": 0.4,
+        "correlation": 0.3,
+        "spread_risk_bump": 1.0e-4,
+    }
+)
+_P006_NTH_TO_DEFAULT_EXACT_NAMES = ("A", "B", "C", "D")
+_P006_NTH_TO_DEFAULT_EXACT_WEIGHTS = (0.4, 0.2, 0.2, 0.2)
+_P006_NTH_TO_DEFAULT_EXACT_OBSERVATION_SCHEDULE = ("2029-11-15",)
+_P006_NTH_TO_DEFAULT_EXACT_AUTHORED_STRING_TERMS = MappingProxyType(
+    {
+        "currency": "USD",
+        "day_count": "ACT/360",
+        "copula_family": "gaussian",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+        "premium_leg": "none",
+    }
+)
+_P006_NTH_TO_DEFAULT_ALLOWED_TERM_FIELDS = frozenset(
+    {
+        "contract_profile",
+        "basket_weights",
+        *_P006_NTH_TO_DEFAULT_EXACT_TERMS,
+        *_P006_NTH_TO_DEFAULT_EXACT_NUMERIC_TERMS,
+    }
+)
+_P006_NTH_TO_DEFAULT_UNSUPPORTED_TERMS = MappingProxyType(
+    {
+        "name_level_credit_curves": "name-level credit curves",
+        "name_level_hazard_rates": "name-level credit hazards",
+        "name_level_spreads": "name-level credit spreads",
+        "recovery_rates": "recovery vectors",
+        "recovery_vector": "recovery vectors",
+        "correlation_matrix": "correlation matrices",
+        "premium_schedule": "running premium schedules",
+    }
+)
+
+
+def _nth_to_default_optional_number(
+    value: object | None,
+    *,
+    name: str,
+) -> float | None:
+    """Normalize one optional finite nth-to-default economic term."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"Nth-to-default {name} must be a finite number.")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValueError(f"Nth-to-default {name} must be a finite number.")
+    return normalized
+
+
+def _nth_to_default_day_count(value: object | None) -> str:
+    """Return an enum-style day-count token for semantic and codegen use."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return ""
+    enum_name = str(getattr(value, "name", "") or "").strip()
+    normalized = enum_name or _normalize_day_count_token(value)
+    if normalized not in {"ACT_360", "ACT_365", "THIRTY_360"}:
+        raise ValueError("Nth-to-default day_count must be a recognized convention.")
+    return normalized
+
+
 def make_nth_to_default_contract(
     *,
     description: str,
@@ -4306,6 +4399,23 @@ def make_nth_to_default_contract(
     reference_weights: tuple[float, ...] | list[float] | None = None,
     trigger_rank: int = 1,
     credit_spread: float | None = None,
+    notional: float | None = None,
+    recovery: float | None = None,
+    correlation: float | None = None,
+    day_count: object | None = None,
+    currency: str = "",
+    copula_family: str | None = None,
+    settlement_rule: str | None = None,
+    valuation_measure: str | None = None,
+    marginal_credit_policy: str | None = None,
+    recovery_policy: str | None = None,
+    correlation_policy: str | None = None,
+    discounting_policy: str | None = None,
+    spread_quote_convention: str | None = None,
+    spread_to_hazard_mapping: str | None = None,
+    premium_leg: str | None = None,
+    spread_risk_bump: float | None = None,
+    contract_profile: str = "",
     preferred_method: str = "copula",
 ) -> SemanticContract:
     """Construct a terminal name-weighted nth-to-default semantic contract."""
@@ -4335,10 +4445,164 @@ def make_nth_to_default_contract(
         raise ValueError(
             "Nth-to-default credit spread must be a decimal annual quote in [0, 1)."
         )
+    normalized_notional = _nth_to_default_optional_number(notional, name="notional")
+    if normalized_notional is not None and normalized_notional <= 0.0:
+        raise ValueError("Nth-to-default notional must be positive.")
+    normalized_recovery = _nth_to_default_optional_number(recovery, name="recovery")
+    if normalized_recovery is not None and not 0.0 <= normalized_recovery < 1.0:
+        raise ValueError("Nth-to-default recovery must lie in [0, 1).")
+    normalized_correlation = _nth_to_default_optional_number(
+        correlation,
+        name="correlation",
+    )
+    if normalized_correlation is not None and not 0.0 <= normalized_correlation < 1.0:
+        raise ValueError("Nth-to-default correlation must lie in [0, 1).")
+    normalized_spread_risk_bump = _nth_to_default_optional_number(
+        spread_risk_bump,
+        name="spread_risk_bump",
+    )
+    if normalized_spread_risk_bump is None:
+        normalized_spread_risk_bump = 1.0e-4
+    if normalized_spread_risk_bump <= 0.0:
+        raise ValueError("Nth-to-default spread_risk_bump must be positive.")
+
+    strict_profile = str(contract_profile or "").strip()
+    is_strict_p006 = strict_profile == _P006_NTH_TO_DEFAULT_CONTRACT_PROFILE
+    authored_policy_terms = {
+        "copula_family": copula_family,
+        "settlement_rule": settlement_rule,
+        "valuation_measure": valuation_measure,
+        "marginal_credit_policy": marginal_credit_policy,
+        "recovery_policy": recovery_policy,
+        "correlation_policy": correlation_policy,
+        "discounting_policy": discounting_policy,
+        "spread_quote_convention": spread_quote_convention,
+        "spread_to_hazard_mapping": spread_to_hazard_mapping,
+        "premium_leg": premium_leg,
+    }
+    if is_strict_p006:
+        required_authored_terms = {
+            "reference_weights": reference_weights,
+            "trigger_rank": trigger_rank,
+            "notional": notional,
+            "recovery": recovery,
+            "correlation": correlation,
+            "day_count": day_count,
+            "currency": currency,
+            "spread": credit_spread,
+            "spread_risk_bump": spread_risk_bump,
+            **authored_policy_terms,
+        }
+        missing = tuple(
+            name
+            for name, value in required_authored_terms.items()
+            if value is None or value == ""
+        )
+        if missing:
+            raise ValueError(
+                "P006 nth-to-default semantic contract requires authored fields: "
+                + ", ".join(missing)
+            )
+
+    normalized_day_count = _nth_to_default_day_count(day_count)
+    normalized_currency = str(currency or "").strip().upper()
+    default_policy_terms = {
+        "copula_family": "gaussian",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_curve_or_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+        "premium_leg": "none",
+    }
+    normalized_policy_terms = {
+        name: str(value if value is not None else default_policy_terms[name]).strip().lower()
+        for name, value in authored_policy_terms.items()
+    }
+    if normalized_policy_terms["copula_family"] != "gaussian":
+        raise ValueError("Nth-to-default semantic composition supports only a Gaussian copula.")
+    if is_strict_p006:
+        authored_string_terms = {
+            "currency": currency,
+            "day_count": day_count,
+            **authored_policy_terms,
+        }
+        for name, expected in _P006_NTH_TO_DEFAULT_EXACT_AUTHORED_STRING_TERMS.items():
+            value = authored_string_terms.get(name)
+            if not isinstance(value, str) or value != expected:
+                raise ValueError(
+                    f"P006 nth-to-default {name} must be authored exactly as {expected!r}."
+                )
+        if reference_names != _P006_NTH_TO_DEFAULT_EXACT_NAMES:
+            raise ValueError(
+                "P006 nth-to-default reference_entities must be exactly "
+                f"{_P006_NTH_TO_DEFAULT_EXACT_NAMES!r}."
+            )
+        if reference_weights is None or any(
+            isinstance(weight, bool) or not isinstance(weight, Real)
+            for weight in reference_weights
+        ):
+            raise ValueError(
+                "P006 nth-to-default reference_weights must be authored finite numbers."
+            )
+        if normalized_weights != _P006_NTH_TO_DEFAULT_EXACT_WEIGHTS:
+            raise ValueError(
+                "P006 nth-to-default reference_weights must be exactly "
+                f"{_P006_NTH_TO_DEFAULT_EXACT_WEIGHTS!r}."
+            )
+        if isinstance(trigger_rank, bool) or not isinstance(trigger_rank, int):
+            raise ValueError("P006 nth-to-default trigger_rank must be the authored integer 2.")
+        if trigger_rank != 2:
+            raise ValueError("P006 nth-to-default trigger_rank must be exactly 2.")
+        authored_numeric_terms = {
+            "notional": notional,
+            "spread": credit_spread,
+            "recovery": recovery,
+            "correlation": correlation,
+            "spread_risk_bump": spread_risk_bump,
+        }
+        for name, value in authored_numeric_terms.items():
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise ValueError(
+                    f"P006 nth-to-default {name} must be an authored finite number."
+                )
+        strict_values = {
+            **normalized_policy_terms,
+            "day_count": normalized_day_count,
+            "currency": normalized_currency,
+        }
+        for name, expected in _P006_NTH_TO_DEFAULT_EXACT_TERMS.items():
+            if strict_values.get(name) != expected:
+                raise ValueError(f"P006 nth-to-default {name} must be {expected!r}.")
+        normalized_numeric_terms = {
+            "notional": normalized_notional,
+            "spread": normalized_spread,
+            "recovery": normalized_recovery,
+            "correlation": normalized_correlation,
+            "spread_risk_bump": normalized_spread_risk_bump,
+        }
+        for name, expected in _P006_NTH_TO_DEFAULT_EXACT_NUMERIC_TERMS.items():
+            if not math.isclose(
+                normalized_numeric_terms[name],
+                expected,
+                rel_tol=0.0,
+                abs_tol=1.0e-15,
+            ):
+                raise ValueError(
+                    f"P006 nth-to-default {name} must be exactly {expected!r}."
+                )
     normalized_method = normalize_method(preferred_method)
     normalized_trigger_rank = max(int(trigger_rank), 1)
     if not schedule:
         raise ValueError("Nth-to-default contract requires a maturity or trigger schedule.")
+    if is_strict_p006 and schedule != _P006_NTH_TO_DEFAULT_EXACT_OBSERVATION_SCHEDULE:
+        raise ValueError(
+            "P006 nth-to-default observation_schedule must be exactly "
+            f"{_P006_NTH_TO_DEFAULT_EXACT_OBSERVATION_SCHEDULE!r}."
+        )
     if len(reference_names) < 2:
         raise ValueError("Nth-to-default contract requires at least two reference entities.")
     if normalized_trigger_rank > len(reference_names):
@@ -4349,6 +4613,12 @@ def make_nth_to_default_contract(
         "nth_to_default",
         preferred_method=preferred_method,
     )
+    representative_credit_description = (
+        "Selected representative credit curve retained for routing and provenance; "
+        "the authored representative spread supersedes it for P006 marginal default probabilities."
+        if is_strict_p006
+        else "Portfolio credit curve used to derive marginal default probabilities."
+    )
 
     product = SemanticProductSemantics(
         semantic_id="nth_to_default",
@@ -4356,6 +4626,12 @@ def make_nth_to_default_contract(
         instrument_class="nth_to_default",
         instrument_aliases=("nth_to_default", "first_to_default", "basket_cds"),
         payoff_family="nth_to_default",
+        conventions=ConventionEnv(
+            day_count_convention=normalized_day_count,
+            payment_currency=normalized_currency,
+            reporting_currency=normalized_currency,
+            tags=("terminal_protection_only",),
+        ),
         timeline=_default_semantic_timeline(
             schedule,
             settlement_dates=schedule,
@@ -4363,7 +4639,7 @@ def make_nth_to_default_contract(
         ),
         underlier_structure="multi_asset_basket",
         payoff_rule="nth_default_name_weighted_loss_payment",
-        settlement_rule="terminal_if_rank_triggers_by_maturity",
+        settlement_rule=normalized_policy_terms["settlement_rule"],
         payoff_traits=(
             "credit_spread_dependence",
             "correlation_dependence",
@@ -4376,7 +4652,7 @@ def make_nth_to_default_contract(
             ObservableSpec(
                 observable_id="basket_credit_curve",
                 observable_type="credit_curve",
-                description="Portfolio credit curve used to derive marginal default probabilities.",
+                description=representative_credit_description,
                 source="credit_curve",
                 schedule_role="observation_dates",
                 availability_phase="observation",
@@ -4403,6 +4679,7 @@ def make_nth_to_default_contract(
                 obligation_id="nth_default_cash_settlement",
                 settle_date_rule="settle_at_maturity_if_nth_default_occurs_by_maturity",
                 amount_expression="total_notional_times_nth_defaulter_weight_times_loss_given_default",
+                currency=normalized_currency,
                 settlement_kind="cash",
                 trigger="nth_default_before_maturity",
                 provenance="semantic_contract",
@@ -4423,10 +4700,16 @@ def make_nth_to_default_contract(
         ),
         term_fields=_freeze_mapping(
             {
+                "contract_profile": strict_profile,
+                "notional": normalized_notional,
                 "basket_weights": normalized_weights,
                 "spread": normalized_spread,
-                "spread_quote_convention": "decimal_annual_representative_single_name",
-                "spread_risk_bump": 1.0e-4,
+                "recovery": normalized_recovery,
+                "correlation": normalized_correlation,
+                "day_count": normalized_day_count,
+                "currency": normalized_currency,
+                **normalized_policy_terms,
+                "spread_risk_bump": normalized_spread_risk_bump,
             }
         ),
         exercise_style="none",
@@ -4442,7 +4725,7 @@ def make_nth_to_default_contract(
         selection_count=normalized_trigger_rank,
         lock_rule="survivor_pool_updates_after_each_default",
         aggregation_rule="name_aligned_weight_times_loss_given_nth_default",
-        maturity_settlement_rule="terminal_if_rank_triggers_by_maturity",
+        maturity_settlement_rule=normalized_policy_terms["settlement_rule"],
         constituents=reference_names,
         state_variables=("remaining_reference_pool", "trigger_default_counter"),
         event_transitions=(
@@ -4471,7 +4754,7 @@ def make_nth_to_default_contract(
         ),
         SemanticMarketInputSpec(
             input_id="credit_curve",
-            description="Portfolio credit curve used for marginal default probabilities.",
+            description=representative_credit_description,
             capability="credit_curve",
             aliases=("hazard_curve", "survival_curve"),
             connector_hint="Provide the basket credit curve or reference-entity survival term structure.",
@@ -4923,6 +5206,13 @@ def _rebuild_nth_to_default_contract(
     """Rebuild an nth-to-default contract for one preferred method."""
     product = contract.product
     term_fields = dict(getattr(product, "term_fields", {}) or {})
+    contract_profile = str(term_fields.get("contract_profile") or "")
+    day_count = term_fields.get("day_count")
+    if (
+        contract_profile == _P006_NTH_TO_DEFAULT_CONTRACT_PROFILE
+        and day_count == "ACT_360"
+    ):
+        day_count = "ACT/360"
     return make_nth_to_default_contract(
         description=contract.description,
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
@@ -4930,6 +5220,23 @@ def _rebuild_nth_to_default_contract(
         reference_weights=tuple(term_fields.get("basket_weights") or ()) or None,
         trigger_rank=max(int(getattr(product, "selection_count", 1) or 1), 1),
         credit_spread=term_fields.get("spread"),
+        notional=term_fields.get("notional"),
+        recovery=term_fields.get("recovery"),
+        correlation=term_fields.get("correlation"),
+        day_count=day_count,
+        currency=term_fields.get("currency", ""),
+        copula_family=term_fields.get("copula_family"),
+        settlement_rule=term_fields.get("settlement_rule"),
+        valuation_measure=term_fields.get("valuation_measure"),
+        marginal_credit_policy=term_fields.get("marginal_credit_policy"),
+        recovery_policy=term_fields.get("recovery_policy"),
+        correlation_policy=term_fields.get("correlation_policy"),
+        discounting_policy=term_fields.get("discounting_policy"),
+        spread_quote_convention=term_fields.get("spread_quote_convention"),
+        spread_to_hazard_mapping=term_fields.get("spread_to_hazard_mapping"),
+        premium_leg=term_fields.get("premium_leg"),
+        spread_risk_bump=term_fields.get("spread_risk_bump"),
+        contract_profile=contract_profile,
         preferred_method=normalized_method,
     )
 

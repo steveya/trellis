@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, timedelta
+import math
 import re
 from typing import Any
 
@@ -252,6 +253,19 @@ def benchmark_request_description(
     if not contract:
         return None
 
+    scenario_contract = (
+        market_scenario_contract_from_task(task, root=root)
+        if root is not None
+        else market_scenario_contract_from_task(task)
+    )
+    strict_p006_contract = _normalize_strict_p006_contract(
+        task,
+        contract,
+        scenario_contract=scenario_contract,
+    )
+    if strict_p006_contract is not None:
+        contract = strict_p006_contract
+
     title = str(task.get("title") or "Benchmark pricing task").strip()
     product = str(contract.get("product") or "").strip().lower()
     lines = [f"Build a pricer for: {title}", ""]
@@ -262,7 +276,8 @@ def benchmark_request_description(
 
     detail_lines = _benchmark_detail_lines(
         contract,
-        scenario_contract=market_scenario_contract_from_task(task, root=root) if root is not None else market_scenario_contract_from_task(task),
+        scenario_contract=scenario_contract,
+        strict_p006=strict_p006_contract is not None,
     )
     if detail_lines:
         lines.extend(detail_lines)
@@ -293,6 +308,13 @@ def benchmark_spec_overrides(
         if root is not None
         else market_scenario_contract_from_task(task)
     )
+    strict_p006_contract = _normalize_strict_p006_contract(
+        task,
+        contract,
+        scenario_contract=scenario_contract,
+    )
+    if strict_p006_contract is not None:
+        contract = strict_p006_contract
     overrides: dict[str, Any] = {}
 
     for key in _DIRECT_OVERRIDE_KEYS:
@@ -405,7 +427,15 @@ def benchmark_spec_overrides(
             )
         )
     elif product == "nth_to_default":
-        overrides.update(_nth_to_default_overrides(contract, valuation_date=valuation_date))
+        overrides.update(
+            _nth_to_default_overrides(
+                contract,
+                valuation_date=valuation_date,
+                strict_p006=strict_p006_contract is not None,
+            )
+        )
+        if strict_p006_contract is not None:
+            overrides.pop("recovery_rate", None)
 
     return {key: value for key, value in overrides.items() if value is not None}
 
@@ -738,23 +768,49 @@ def _benchmark_detail_lines(
     contract: Mapping[str, Any],
     *,
     scenario_contract: MarketScenarioContract | None,
+    strict_p006: bool = False,
 ) -> list[str]:
     product = str(contract.get("product") or "").strip().lower()
     lines: list[str] = []
     if product == "nth_to_default":
         names = tuple(str(name) for name in (contract.get("basket_names") or ()))
         weights = tuple(float(weight) for weight in (contract.get("basket_weights") or ()))
+        notional_text = f"{contract.get('notional')}"
+        if strict_p006:
+            notional_text += f" {contract.get('currency')}"
         lines.extend(
             [
                 f"Trigger rank: {contract.get('nth') or contract.get('n_th') or 1}.",
                 f"Basket names: {names}.",
                 f"Basket notional fractions: {weights}.",
-                f"Notional: {contract.get('notional')}.",
+                f"Notional: {notional_text}.",
                 f"Recovery rate: {contract.get('recovery_rate', contract.get('recovery'))}.",
                 f"Spread: {contract.get('spread')} as a decimal annual market credit-spread quote; not a running coupon.",
                 "Spread CS01: currency PV change for a +1 bp quote bump.",
             ]
         )
+        if strict_p006:
+            lines.extend(
+                [
+                    f"Maturity: {contract['end_date'].isoformat()} (authored tenor {contract['maturity_tenor']}).",
+                    "Market curves: "
+                    f"discount={contract['discount_curve_id']}, "
+                    f"credit={contract['credit_curve_id']}.",
+                    f"Gaussian equicorrelation: {contract['correlation']}.",
+                    f"Day count: {contract['day_count']}.",
+                    f"Settlement: {contract['settlement_rule']}.",
+                    f"Valuation measure: {contract['valuation_measure']}.",
+                    f"Marginal credit policy: {contract['marginal_credit_policy']}.",
+                    f"Recovery policy: {contract['recovery_policy']}.",
+                    f"Correlation policy: {contract['correlation_policy']}.",
+                    f"Discounting policy: {contract['discounting_policy']}.",
+                    f"Copula family: {contract['copula_family']}.",
+                    f"Spread quote convention: {contract['spread_quote_convention']}.",
+                    f"Spread-to-hazard mapping: {contract['spread_to_hazard_mapping']}.",
+                    f"Premium leg: {contract['premium_leg']}.",
+                    f"Spread-risk bump: {contract['spread_risk_bump']}.",
+                ]
+            )
         return lines
     if product == "fx_vanilla":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
@@ -1336,7 +1392,247 @@ def _cds_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict
     }
 
 
-def _nth_to_default_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
+_P006_REQUIRED_FIELDS: tuple[str, ...] = (
+    "currency",
+    "notional",
+    "maturity_tenor",
+    "nth",
+    "basket_names",
+    "basket_weights",
+    "spread",
+    "recovery_rate",
+    "copula_family",
+    "correlation",
+    "day_count",
+    "settlement_rule",
+    "valuation_measure",
+    "marginal_credit_policy",
+    "recovery_policy",
+    "correlation_policy",
+    "discounting_policy",
+    "spread_quote_convention",
+    "spread_to_hazard_mapping",
+    "premium_leg",
+    "spread_risk_bump",
+)
+
+_P006_EXACT_STRING_FIELDS: Mapping[str, str] = {
+    "currency": "USD",
+    "maturity_tenor": "5Y",
+    "copula_family": "gaussian",
+    "day_count": "ACT/360",
+    "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+    "valuation_measure": "terminal_protection_leg_pv",
+    "marginal_credit_policy": "homogeneous_representative_spread",
+    "recovery_policy": "homogeneous_common",
+    "correlation_policy": "gaussian_equicorrelation",
+    "discounting_policy": "deterministic",
+    "spread_quote_convention": "decimal_annual_representative_single_name",
+    "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+    "premium_leg": "none",
+}
+_P006_EXACT_NUMERIC_FIELDS: Mapping[str, float] = {
+    "notional": 5_000_000.0,
+    "spread": 0.025,
+    "recovery_rate": 0.4,
+    "correlation": 0.3,
+    "spread_risk_bump": 1.0e-4,
+}
+_P006_EXACT_NAMES = ("A", "B", "C", "D")
+_P006_EXACT_WEIGHTS = (0.4, 0.2, 0.2, 0.2)
+
+
+def _normalize_strict_p006_contract(
+    task: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    *,
+    scenario_contract: MarketScenarioContract | None,
+) -> dict[str, Any] | None:
+    """Return P006's complete bounded contract without deriving economics."""
+    if str(task.get("id") or "").strip() != "P006":
+        return None
+    if str(contract.get("product") or "").strip() != "nth_to_default":
+        raise ValueError("P006 product must be nth_to_default")
+
+    allowed_fields = {"product", *_P006_REQUIRED_FIELDS}
+    extra_fields = tuple(sorted(set(contract) - allowed_fields))
+    if extra_fields:
+        raise ValueError(
+            "P006 does not support extension_contract fields: "
+            + ", ".join(extra_fields)
+        )
+
+    missing = [
+        field
+        for field in _P006_REQUIRED_FIELDS
+        if field not in contract or contract.get(field) is None or contract.get(field) == ""
+    ]
+    if missing:
+        raise ValueError("P006 requires authored fields: " + ", ".join(missing))
+    if scenario_contract is None:
+        raise ValueError("P006 requires the authored usd_credit_ig market scenario")
+    if (
+        str(task.get("market_scenario_id") or "").strip() != "usd_credit_ig"
+        or scenario_contract.scenario_id != "usd_credit_ig"
+    ):
+        raise ValueError("P006 requires market_scenario_id 'usd_credit_ig'")
+    expected_curves = {
+        "discount_curve": "usd_ois",
+        "credit_curve": "usd_ig",
+    }
+    for role, expected in expected_curves.items():
+        actual = str(scenario_contract.selected_components.get(role) or "").strip()
+        if actual != expected:
+            raise ValueError(
+                f"P006 market scenario {role} must be {expected!r}, got {actual!r}"
+            )
+
+    normalized = dict(contract)
+    for field, expected in _P006_EXACT_STRING_FIELDS.items():
+        value = contract.get(field)
+        if not isinstance(value, str) or value != expected:
+            raise ValueError(f"P006 {field} must be {expected!r}")
+
+    names_value = contract.get("basket_names")
+    if not isinstance(names_value, (list, tuple)):
+        raise ValueError("P006 basket_names must be an ordered sequence")
+    names = tuple(names_value)
+    if any(
+        not isinstance(name, str) or not name or name != name.strip()
+        for name in names
+    ):
+        raise ValueError("P006 basket_names must contain exact non-empty names")
+    if len(names) < 2:
+        raise ValueError("P006 basket_names must contain at least two names")
+    if len(set(names)) != len(names):
+        raise ValueError("P006 basket_names must be unique")
+    if names != _P006_EXACT_NAMES:
+        raise ValueError(f"P006 basket_names must be exactly {_P006_EXACT_NAMES!r}")
+
+    weights_value = contract.get("basket_weights")
+    if not isinstance(weights_value, (list, tuple)):
+        raise ValueError("P006 basket_weights must be an ordered sequence")
+    weights = tuple(
+        _strict_p006_number(weight, field="basket_weights")
+        for weight in weights_value
+    )
+    if len(weights) != len(names):
+        raise ValueError("P006 basket_weights must have the same length as basket_names")
+    if any(weight < 0.0 for weight in weights):
+        raise ValueError("P006 basket_weights must be non-negative")
+    if not math.isclose(sum(weights), 1.0, rel_tol=0.0, abs_tol=1.0e-10):
+        raise ValueError("P006 basket_weights must sum to 1")
+    if len(weights) != len(_P006_EXACT_WEIGHTS) or any(
+        not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1.0e-15)
+        for actual, expected in zip(weights, _P006_EXACT_WEIGHTS, strict=True)
+    ):
+        raise ValueError(
+            f"P006 basket_weights must be exactly {_P006_EXACT_WEIGHTS!r}"
+        )
+
+    rank = contract.get("nth")
+    if isinstance(rank, bool) or not isinstance(rank, int):
+        raise ValueError("P006 nth must be an authored integer")
+    if rank <= 0 or rank > len(names):
+        raise ValueError("P006 nth must lie in [1, len(basket_names)]")
+    if rank != 2:
+        raise ValueError("P006 nth must be exactly 2")
+
+    notional = _strict_p006_number(contract.get("notional"), field="notional")
+    spread = _strict_p006_number(contract.get("spread"), field="spread")
+    recovery = _strict_p006_number(
+        contract.get("recovery_rate"),
+        field="recovery_rate",
+    )
+    correlation = _strict_p006_number(
+        contract.get("correlation"),
+        field="correlation",
+    )
+    spread_risk_bump = _strict_p006_number(
+        contract.get("spread_risk_bump"),
+        field="spread_risk_bump",
+    )
+    if notional <= 0.0:
+        raise ValueError("P006 notional must be positive")
+    if not 0.0 <= spread < 1.0:
+        raise ValueError("P006 spread must lie in [0, 1)")
+    if not 0.0 <= recovery < 1.0:
+        raise ValueError("P006 recovery_rate must lie in [0, 1)")
+    if not 0.0 <= correlation < 1.0:
+        raise ValueError("P006 correlation must lie in [0, 1)")
+    normalized_numeric_fields = {
+        "notional": notional,
+        "spread": spread,
+        "recovery_rate": recovery,
+        "correlation": correlation,
+        "spread_risk_bump": spread_risk_bump,
+    }
+    for field, expected in _P006_EXACT_NUMERIC_FIELDS.items():
+        if not math.isclose(
+            normalized_numeric_fields[field],
+            expected,
+            rel_tol=0.0,
+            abs_tol=1.0e-15,
+        ):
+            raise ValueError(f"P006 {field} must be exactly {expected!r}")
+
+    valuation_date = scenario_contract.valuation_date or scenario_contract.as_of
+    if valuation_date is None:
+        raise ValueError("P006 market scenario requires an as-of or valuation date")
+    try:
+        end_date = _end_date_from_contract(contract, start_date=valuation_date)
+    except ValueError as exc:
+        raise ValueError(f"P006 maturity_tenor is invalid: {exc}") from None
+    if end_date is None or end_date <= valuation_date:
+        raise ValueError("P006 maturity_tenor must produce a future maturity")
+
+    normalized.update(
+        {
+            "notional": notional,
+            "nth": rank,
+            "basket_names": names,
+            "basket_weights": weights,
+            "spread": spread,
+            "recovery_rate": recovery,
+            "correlation": correlation,
+            "spread_risk_bump": spread_risk_bump,
+            "end_date": end_date,
+            "discount_curve_id": expected_curves["discount_curve"],
+            "credit_curve_id": expected_curves["credit_curve"],
+        }
+    )
+    return normalized
+
+
+def _strict_p006_number(value: object, *, field: str) -> float:
+    """Return one finite authored P006 number, excluding bool and numeric text."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"P006 {field} must be an authored finite number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValueError(f"P006 {field} must be an authored finite number")
+    return normalized
+
+
+def _nth_to_default_overrides(
+    contract: Mapping[str, Any],
+    *,
+    valuation_date: date,
+    strict_p006: bool = False,
+) -> dict[str, Any]:
+    if strict_p006:
+        return {
+            "notional": contract["notional"],
+            "n_names": len(contract["basket_names"]),
+            "n_th": contract["nth"],
+            "basket_names": tuple(contract["basket_names"]),
+            "basket_weights": tuple(contract["basket_weights"]),
+            "end_date": contract["end_date"],
+            "correlation": contract["correlation"],
+            "recovery": contract["recovery_rate"],
+            "spread": contract["spread"],
+            "day_count": DayCountConvention.ACT_360,
+        }
     basket_names = contract.get("basket_names") or contract.get("names")
     n_names = len(basket_names) if isinstance(basket_names, (list, tuple)) else None
     basket_weights = contract.get("basket_weights") or contract.get("weights")

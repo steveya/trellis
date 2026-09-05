@@ -869,7 +869,16 @@ The first migrated vanilla cases now use that boundary directly:
   permutation of the name weights, whereas asymmetric sampled fixtures can
   validate name-to-weight alignment. The retained product helper is reference
   evidence only. Tranche-style CDO, heterogeneous name curves/recoveries, and
-  running-premium routes remain outside this bounded contract
+  running-premium routes remain outside this bounded contract. P006 is the
+  fail-closed proving contract: its semantic terms explicitly carry USD
+  notional, ACT/360, common recovery, Gaussian scalar equicorrelation,
+  deterministic discounting, terminal protection-only settlement, the
+  representative-spread credit-triangle mapping, and the +1 bp risk bump
+  through both analytical and sampled specializations. Although the selected
+  scenario still identifies ``usd_ig`` for provenance, P006's authored spread
+  supersedes that curve as the flat-equivalent marginal-hazard input. Terminal
+  settlement does not make this contract terminal-Markov: default order and
+  triggering-name exposure remain path-dependent semantic state.
 - homogeneous portfolio-loss composition now also has a small public algebra.
   ``equicorrelation_matrix`` constructs the validated non-negative dependence
   matrix used by Gaussian and Student-t evidence;

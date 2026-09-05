@@ -311,8 +311,12 @@ tasks:
   construct:
   - copula
   - monte_carlo
-  description: Price an nth-to-default basket with custom basket weights and return
-    price plus spread sensitivities.
+  description: Price the USD 5Y second-to-default terminal protection-leg PV for
+    basket A/B/C/D with notional fractions 40%/20%/20%/20%, representative 250
+    bp spread, common 40% recovery, Gaussian scalar equicorrelation 0.3, ACT/360,
+    deterministic USD OIS discounting, and no running premium leg. Return price
+    and representative-spread CS01 from a +1 bp bump; compare analytical
+    one-factor integration with 250000-path seed-42 Gaussian Monte Carlo.
   market_scenario_id: usd_credit_ig
   validation_policy: invariants_and_cross_method
   cross_validate:
@@ -334,7 +338,7 @@ tasks:
         exercise_style: none
         model_family: credit_copula
         underlying_asset_class: credit
-        observation_style: terminal
+        observation_style: path_dependent
       weighted_rank_monte_carlo:
         method: monte_carlo
         route_id: credit_basket_nth_to_default
@@ -347,9 +351,12 @@ tasks:
         exercise_style: none
         model_family: credit_copula
         underlying_asset_class: credit
-        observation_style: terminal
+        observation_style: path_dependent
   extension_contract:
     product: nth_to_default
+    currency: USD
+    notional: 5000000.0
+    maturity_tenor: 5Y
     nth: 2
     basket_names:
     - A
@@ -361,10 +368,21 @@ tasks:
     - 0.2
     - 0.2
     - 0.2
-    maturity_tenor: 5Y
     spread: 0.025
     recovery_rate: 0.4
-    notional: 5000000.0
+    copula_family: gaussian
+    correlation: 0.3
+    day_count: ACT/360
+    settlement_rule: terminal_if_rank_triggers_by_maturity
+    valuation_measure: terminal_protection_leg_pv
+    marginal_credit_policy: homogeneous_representative_spread
+    recovery_policy: homogeneous_common
+    correlation_policy: gaussian_equicorrelation
+    discounting_policy: deterministic
+    spread_quote_convention: decimal_annual_representative_single_name
+    spread_to_hazard_mapping: credit_triangle_spread_over_one_minus_recovery
+    premium_leg: none
+    spread_risk_bump: 0.0001
 - id: P007
   title: 'Trellis extension: capped and floored cliquet option'
   status: pending

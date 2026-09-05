@@ -20,6 +20,14 @@ from trellis.agent.semantic_concepts import (
 )
 from trellis.agent.semantic_contracts import (
     DEFAULT_PHASE_ORDER,
+    _P006_NTH_TO_DEFAULT_ALLOWED_TERM_FIELDS,
+    _P006_NTH_TO_DEFAULT_CONTRACT_PROFILE,
+    _P006_NTH_TO_DEFAULT_EXACT_NAMES,
+    _P006_NTH_TO_DEFAULT_EXACT_NUMERIC_TERMS,
+    _P006_NTH_TO_DEFAULT_EXACT_OBSERVATION_SCHEDULE,
+    _P006_NTH_TO_DEFAULT_EXACT_TERMS,
+    _P006_NTH_TO_DEFAULT_EXACT_WEIGHTS,
+    _P006_NTH_TO_DEFAULT_UNSUPPORTED_TERMS,
     _PHYSICAL_BERMUDAN_BUSINESS_DAY_ADJUSTMENTS,
     _PHYSICAL_BERMUDAN_CALENDARS,
     _PHYSICAL_BERMUDAN_COUPON_DAY_COUNTS,
@@ -2371,6 +2379,9 @@ def _validate_nth_to_default_shape(
     warnings: list[str],
 ) -> None:
     """Validate an nth-to-default basket-credit semantic shape."""
+    product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    contract_profile = str(term_fields.get("contract_profile") or "").strip()
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -2394,7 +2405,6 @@ def _validate_nth_to_default_shape(
     )
     if "credit_curve" not in required_capabilities:
         errors.append("Nth-to-default semantics require a credit curve input.")
-    product = contract.product
     observable_types = {
         str(getattr(item, "observable_type", "")).strip().lower()
         for item in product.observables
@@ -2412,7 +2422,6 @@ def _validate_nth_to_default_shape(
         errors.append("Nth-to-default trigger_rank cannot exceed the reference-entity pool.")
     if len(set(product.constituents)) != len(product.constituents):
         errors.append("Nth-to-default reference entities must be unique.")
-    term_fields = dict(getattr(product, "term_fields", {}) or {})
     weights = tuple(term_fields.get("basket_weights") or ())
     if weights:
         if len(weights) != len(product.constituents):
@@ -2448,6 +2457,87 @@ def _validate_nth_to_default_shape(
             errors.append(
                 "Nth-to-default spread must be a finite numeric decimal quote in [0, 1)."
             )
+    if contract_profile and contract_profile != _P006_NTH_TO_DEFAULT_CONTRACT_PROFILE:
+        errors.append(
+            f"Nth-to-default contract_profile `{contract_profile}` is not supported."
+        )
+    if contract_profile == _P006_NTH_TO_DEFAULT_CONTRACT_PROFILE:
+        extra_term_fields = tuple(
+            sorted(set(term_fields) - _P006_NTH_TO_DEFAULT_ALLOWED_TERM_FIELDS)
+        )
+        for field, label in _P006_NTH_TO_DEFAULT_UNSUPPORTED_TERMS.items():
+            if field in term_fields:
+                errors.append(
+                    f"P006 nth-to-default does not support {label} ({field})."
+                )
+        for field in extra_term_fields:
+            if field not in _P006_NTH_TO_DEFAULT_UNSUPPORTED_TERMS:
+                errors.append(
+                    f"P006 nth-to-default term_fields.{field} is not supported."
+                )
+
+        for field, expected in _P006_NTH_TO_DEFAULT_EXACT_TERMS.items():
+            if term_fields.get(field) != expected:
+                errors.append(
+                    f"P006 nth-to-default term_fields.{field} must be {expected!r}."
+                )
+
+        for field, expected in _P006_NTH_TO_DEFAULT_EXACT_NUMERIC_TERMS.items():
+            value = term_fields.get(field)
+            if isinstance(value, bool) or not isinstance(value, Real):
+                errors.append(
+                    f"P006 nth-to-default term_fields.{field} must be a finite number."
+                )
+                continue
+            normalized = float(value)
+            if not math.isfinite(normalized) or not math.isclose(
+                normalized,
+                expected,
+                rel_tol=0.0,
+                abs_tol=1.0e-15,
+            ):
+                errors.append(
+                    f"P006 nth-to-default term_fields.{field} must be exactly {expected!r}."
+                )
+        if not weights:
+            errors.append("P006 nth-to-default requires explicit basket_weights.")
+        elif tuple(weights) != _P006_NTH_TO_DEFAULT_EXACT_WEIGHTS:
+            errors.append(
+                "P006 nth-to-default term_fields.basket_weights must be exactly "
+                f"{_P006_NTH_TO_DEFAULT_EXACT_WEIGHTS!r}."
+            )
+        if product.constituents != _P006_NTH_TO_DEFAULT_EXACT_NAMES:
+            errors.append(
+                "P006 nth-to-default constituents must be exactly "
+                f"{_P006_NTH_TO_DEFAULT_EXACT_NAMES!r}."
+            )
+        if product.selection_count != 2:
+            errors.append("P006 nth-to-default selection_count must be exactly 2.")
+        exact_schedule = _P006_NTH_TO_DEFAULT_EXACT_OBSERVATION_SCHEDULE
+        timeline = product.timeline
+        if product.observation_schedule != exact_schedule or any(
+            tuple(dates) != exact_schedule
+            for dates in (
+                timeline.observation_dates,
+                timeline.settlement_dates,
+                timeline.state_update_dates,
+            )
+        ):
+            errors.append(
+                "P006 nth-to-default observation_schedule and timeline must be exactly "
+                f"{exact_schedule!r}."
+            )
+        if product.settlement_rule != "terminal_if_rank_triggers_by_maturity":
+            errors.append("P006 nth-to-default settlement_rule must remain terminal.")
+        if product.maturity_settlement_rule != product.settlement_rule:
+            errors.append(
+                "P006 nth-to-default maturity settlement mirror must match settlement_rule."
+            )
+        conventions = product.conventions
+        if conventions.day_count_convention != "ACT_360":
+            errors.append("P006 nth-to-default conventions must preserve day_count ACT_360.")
+        if conventions.payment_currency != "USD" or conventions.reporting_currency != "USD":
+            errors.append("P006 nth-to-default conventions must preserve USD currency.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

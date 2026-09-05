@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, fields
 from datetime import date, datetime
 from pathlib import Path
@@ -63,6 +64,18 @@ def _strict_physical_bermudan_task() -> dict:
             "lattice_date_tolerance_days": 0,
         },
     }
+
+
+def _strict_p006_task() -> dict:
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return deepcopy(
+        next(
+            task
+            for task in load_task_manifest("TASKS_EXTENSION.yaml")
+            if task["id"] == "P006"
+        )
+    )
 
 
 def test_run_task_passes_force_rebuild_and_validation():
@@ -2702,9 +2715,72 @@ def test_weighted_nth_to_default_extension_declares_pricing_and_cross_method_con
     assert sampled["backend_binding_id"].endswith("GaussianCopula")
     assert analytical["variant_parameters"]["exposure_contract"] == "name_weighted_terminal"
     assert sampled["variant_parameters"]["spread_risk"] == "common_random_numbers_1bp"
+    assert analytical["observation_style"] == sampled["observation_style"] == "path_dependent"
     assert cross_validate["output_tolerances_pct"] == {
         "spread_cs01": pytest.approx(15.0)
     }
+
+
+def test_p006_uses_structured_semantic_bridge_without_reparsing_prose(monkeypatch):
+    import trellis.agent.semantic_contracts as semantic_contracts
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    def fail_if_reparsed(*args, **kwargs):
+        raise AssertionError("P006 structured fields must not be reparsed from prose")
+
+    monkeypatch.setattr(semantic_contracts, "draft_semantic_contract", fail_if_reparsed)
+
+    contract = task_to_semantic_contract(_strict_p006_task())
+    terms = dict(contract.product.term_fields)
+
+    assert contract.semantic_id == "nth_to_default"
+    assert contract.product.constituents == ("A", "B", "C", "D")
+    assert contract.product.selection_count == 2
+    assert contract.product.observation_schedule == ("2029-11-15",)
+    assert contract.product.conventions.payment_currency == "USD"
+    assert contract.product.conventions.reporting_currency == "USD"
+    assert terms == {
+        "contract_profile": "p006_bounded_terminal_protection_v1",
+        "notional": pytest.approx(5_000_000.0),
+        "basket_weights": (0.4, 0.2, 0.2, 0.2),
+        "spread": pytest.approx(0.025),
+        "recovery": pytest.approx(0.4),
+        "correlation": pytest.approx(0.3),
+        "day_count": "ACT_360",
+        "currency": "USD",
+        "copula_family": "gaussian",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": "credit_triangle_spread_over_one_minus_recovery",
+        "premium_leg": "none",
+        "spread_risk_bump": pytest.approx(1.0e-4),
+    }
+
+
+@pytest.mark.parametrize(
+    "unsupported_field",
+    (
+        "name_level_credit_curves",
+        "recovery_rates",
+        "correlation_matrix",
+        "premium_schedule",
+    ),
+)
+def test_p006_structured_semantic_bridge_rejects_unsupported_extra_economics(
+    unsupported_field,
+):
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = _strict_p006_task()
+    task["extension_contract"][unsupported_field] = ["unsupported"]
+
+    with pytest.raises(ValueError, match=unsupported_field):
+        task_to_semantic_contract(task)
 
 
 def test_declared_honest_block_normalizes_scalar_string_fields():

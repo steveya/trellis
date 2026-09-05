@@ -185,6 +185,21 @@ from being reported as both methods and makes both binding and risk evidence
 part of execution proof. The same explicit target-binding rule remains in
 force for homogeneous relatives T50 and E26.
 
+P006's ingress is also contract-first. ``TASKS_EXTENSION.yaml`` authors every
+admitted economic and model coordinate, including currency, notional, rank,
+ordered names and weights, maturity tenor, representative spread, common
+recovery, Gaussian scalar equicorrelation, ACT/360, deterministic discounting,
+terminal protection-only settlement, no premium leg, and the +1 bp risk bump.
+The runtime constructs the typed nth-to-default semantic contract directly
+from that mapping; rendered prose is only an audit mirror. Manifest and
+semantic validation reject missing terms, heterogeneous name curves or
+recoveries, correlation matrices, non-Gaussian dependence, premium legs, and
+non-terminal settlement before a build attempt. The market scenario still
+selects ``usd_ois`` and ``usd_ig``, but the authored spread intentionally
+supersedes ``usd_ig`` for P006 marginal hazard. Both comparison lanes declare
+path-dependent observation because default order and triggering-name identity
+remain stateful even though the protection cashflow settles at maturity.
+
 Comparison target contracts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

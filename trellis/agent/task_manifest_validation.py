@@ -552,6 +552,15 @@ def _validate_extension_task(
                 path,
             )
         )
+    if task_id == "P006":
+        issues.extend(
+            _validate_p006_nth_to_default_contract(
+                manifest_name,
+                task,
+                contract if isinstance(contract, Mapping) else {},
+                path,
+            )
+        )
     return issues
 
 
@@ -1073,6 +1082,191 @@ def _validate_p005_physical_bermudan_swaption_contract(
                 manifest_name,
                 "extension.bermudan_swaption_invalid_contract",
                 "P005 requires the bounded physical dual-curve swap-tail contract and 5% comparison tolerance",
+                task_id=task_id,
+                path=path,
+            )
+        )
+    return issues
+
+
+def _validate_p006_nth_to_default_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    """Keep P006 on one complete homogeneous terminal-protection contract."""
+    task_id = "P006"
+    contract_path = f"{path}.extension_contract"
+    issues: list[TaskManifestIssue] = []
+    expected_description = (
+        "Price the USD 5Y second-to-default terminal protection-leg PV for basket "
+        "A/B/C/D with notional fractions 40%/20%/20%/20%, representative 250 bp "
+        "spread, common 40% recovery, Gaussian scalar equicorrelation 0.3, ACT/360, "
+        "deterministic USD OIS discounting, and no running premium leg. Return price "
+        "and representative-spread CS01 from a +1 bp bump; compare analytical "
+        "one-factor integration with 250000-path seed-42 Gaussian Monte Carlo."
+    )
+    if _text(task.get("description")) != expected_description:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.nth_to_default_invalid_description",
+                "P006 description must mirror its complete bounded pricing contract",
+                task_id=task_id,
+                path=f"{path}.description",
+            )
+        )
+    expected_contract = {
+        "product": "nth_to_default",
+        "currency": "USD",
+        "notional": 5_000_000.0,
+        "maturity_tenor": "5Y",
+        "nth": 2,
+        "basket_names": ["A", "B", "C", "D"],
+        "basket_weights": [0.4, 0.2, 0.2, 0.2],
+        "spread": 0.025,
+        "recovery_rate": 0.4,
+        "copula_family": "gaussian",
+        "correlation": 0.3,
+        "day_count": "ACT/360",
+        "settlement_rule": "terminal_if_rank_triggers_by_maturity",
+        "valuation_measure": "terminal_protection_leg_pv",
+        "marginal_credit_policy": "homogeneous_representative_spread",
+        "recovery_policy": "homogeneous_common",
+        "correlation_policy": "gaussian_equicorrelation",
+        "discounting_policy": "deterministic",
+        "spread_quote_convention": "decimal_annual_representative_single_name",
+        "spread_to_hazard_mapping": (
+            "credit_triangle_spread_over_one_minus_recovery"
+        ),
+        "premium_leg": "none",
+        "spread_risk_bump": 1.0e-4,
+    }
+    for field in expected_contract:
+        if field not in contract or not _meaningful_value(contract.get(field)):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.nth_to_default_missing_field",
+                    f"P006 terminal-protection contract requires authored {field}",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+
+    cross_validate = task.get("cross_validate")
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+    common_target_axes = {
+        "route_id": "credit_basket_nth_to_default",
+        "route_family": "nth_to_default",
+        "payoff_family": "nth_to_default",
+        "exercise_style": "none",
+        "model_family": "credit_copula",
+        "underlying_asset_class": "credit",
+        "observation_style": "path_dependent",
+    }
+    expected_targets = {
+        "weighted_rank_analytical": {
+            "method": "copula",
+            **common_target_axes,
+            "backend_binding_id": (
+                "trellis.models.contingent_cashflows."
+                "nth_to_default_probability"
+            ),
+            "variant_parameters": {
+                "rank_evidence": "one_factor_integration",
+                "exposure_contract": "name_weighted_terminal",
+                "spread_risk": "parallel_1bp",
+            },
+            "validation_bundle_id": "copula:nth_to_default",
+        },
+        "weighted_rank_monte_carlo": {
+            "method": "monte_carlo",
+            **common_target_axes,
+            "backend_binding_id": (
+                "trellis.models.copulas.gaussian.GaussianCopula"
+            ),
+            "variant_parameters": {
+                "rank_evidence": "sampled_default_times",
+                "exposure_contract": "name_weighted_terminal",
+                "spread_risk": "common_random_numbers_1bp",
+            },
+            "spec_overrides": {"n_paths": 250_000, "seed": 42},
+            "validation_bundle_id": "monte_carlo:nth_to_default",
+        },
+    }
+    internal_targets = cross_validate.get("internal")
+    internal_targets_are_exact = (
+        _nonempty_string_sequence(internal_targets)
+        and tuple(internal_targets) == tuple(expected_targets)
+    )
+    target_contracts_are_exact = (
+        set(targets) == set(expected_targets)
+        and all(
+            isinstance(targets.get(target_id), Mapping)
+            and dict(targets[target_id]) == expected
+            for target_id, expected in expected_targets.items()
+        )
+    )
+    if (
+        set(cross_validate)
+        != {
+            "internal",
+            "tolerance_pct",
+            "output_tolerances_pct",
+            "target_contracts",
+        }
+        or not internal_targets_are_exact
+        or not target_contracts_are_exact
+        or not _manifest_value_matches(cross_validate.get("tolerance_pct"), 3.0)
+        or cross_validate.get("output_tolerances_pct")
+        != {"spread_cs01": 15.0}
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.nth_to_default_invalid_targets",
+                "P006 requires the exact analytical and seeded Monte Carlo comparison contract",
+                task_id=task_id,
+                path=f"{path}.cross_validate",
+            )
+        )
+
+    construct = task.get("construct")
+    construct_methods = (
+        tuple(str(item).strip() for item in construct)
+        if _nonempty_string_sequence(construct)
+        else ()
+    )
+    contract_is_exact = (
+        _text(task.get("instrument_type")) == "nth_to_default"
+        and _text(task.get("market_scenario_id")) == "usd_credit_ig"
+        and construct_methods == ("copula", "monte_carlo")
+        and set(contract) == set(expected_contract)
+        and all(
+            _manifest_value_matches(contract.get(field), expected)
+            for field, expected in expected_contract.items()
+        )
+        and isinstance(contract.get("nth"), int)
+        and not isinstance(contract.get("nth"), bool)
+        and not any(
+            field in task
+            for field in (
+                "expected_outcome",
+                "expected_blocker_ids",
+                "honest_block_contract",
+            )
+        )
+    )
+    if not contract_is_exact:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.nth_to_default_invalid_contract",
+                "P006 requires the exact homogeneous terminal protection-leg contract",
                 task_id=task_id,
                 path=path,
             )
