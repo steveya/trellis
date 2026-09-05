@@ -4880,6 +4880,58 @@ def test_effective_task_description_bootstraps_title_only_rainbow_proof_tasks():
     assert "Comparison targets: stulz_rainbow (analytical), mc_rainbow (monte_carlo)" in description
 
 
+def test_t102_semantics_are_synthesized_from_authored_fields_without_prose_reparse(
+    monkeypatch,
+):
+    from copy import deepcopy
+
+    from trellis.agent import semantic_contracts
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T102"
+    )
+    renamed = deepcopy(task)
+    renamed["title"] = "Display-only title"
+
+    monkeypatch.setattr(
+        semantic_contracts,
+        "draft_semantic_contract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("T102 authored fields must not be reparsed from prose")
+        ),
+    )
+
+    original_summary = semantic_contract_summary(task_to_semantic_contract(task))
+    renamed_summary = semantic_contract_summary(task_to_semantic_contract(renamed))
+
+    assert original_summary == renamed_summary
+    assert original_summary["semantic_id"] == "terminal_basket_option"
+    assert original_summary["product"]["instrument_class"] == "basket_option"
+    assert original_summary["product"]["exercise_style"] == "european"
+    assert original_summary["product"]["path_dependence"] == "terminal_markov"
+    assert original_summary["product"]["constituents"] == ["SPX", "NDX"]
+    assert original_summary["product"]["observation_schedule"] == ["2025-11-15"]
+    assert original_summary["product"]["term_fields"] == {
+        "contract_profile": "t102_two_asset_terminal_best_of_v1",
+        "notional": pytest.approx(10.0),
+        "spots": [100.0, 95.0],
+        "volatilities": [0.2, 0.2],
+        "dividend_yields": [0.0, 0.0],
+        "strike": pytest.approx(100.0),
+        "correlation": [[1.0, 0.35], [0.35, 1.0]],
+        "day_count": "ACT/365",
+        "n_paths": 40_000,
+        "n_steps": 1,
+        "seed": 42,
+        "mc_method": "exact",
+    }
+
+
 def test_build_market_state_for_credit_task_injects_default_credit_curve_when_unspecified():
     from trellis.agent.task_runtime import build_market_state_for_task
     from trellis.core.market_state import MarketState

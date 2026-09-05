@@ -1492,6 +1492,16 @@ def _validate_legacy_task(
             )
         )
 
+    if task_id == "T102":
+        issues.extend(
+            _validate_legacy_terminal_basket_comparison_contract(
+                manifest_name,
+                task,
+                path,
+                root=root,
+            )
+        )
+
     if disposition == "expected_honest_block":
         issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
         return issues
@@ -1716,6 +1726,184 @@ def _validate_legacy_lookback_comparison_contract(
             manifest_name,
             "legacy.lookback_invalid_contract",
             "T30/T96 require the bounded fixed-strike continuous lookback comparison contract",
+            task_id=_text(task.get("id")),
+            path=path,
+        )
+    ]
+
+
+def _validate_legacy_terminal_basket_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+    *,
+    root: Path | None = None,
+) -> list[TaskManifestIssue]:
+    """Keep T102 on one exact, bounded two-asset terminal proof contract."""
+    contract = task.get("benchmark_contract")
+    cross_validate = task.get("cross_validate")
+    contract = contract if isinstance(contract, Mapping) else {}
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+
+    market = task.get("market")
+    canonical_market_matches = market is None
+    if isinstance(market, Mapping):
+        from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+        scenario_contracts = (
+            load_market_scenario_contracts()
+            if root is None
+            else load_market_scenario_contracts(root=root)
+        )
+        canonical = scenario_contracts.get("equity_rainbow_spx_ndx_proof")
+        if canonical is not None:
+            expected_market = {
+                "source": canonical.source,
+                "as_of": canonical.as_of.isoformat(),
+                **dict(canonical.selected_components),
+                "scenario_contract": canonical.to_payload(),
+                "scenario_digest": canonical.scenario_digest,
+                "scenario_schema_version": canonical.schema_version,
+                "scenario_constructor_kind": canonical.constructor_kind,
+            }
+            benchmark_inputs = canonical.financepy_inputs()
+            if benchmark_inputs:
+                expected_market["benchmark_inputs"] = benchmark_inputs
+            canonical_market_matches = _manifest_value_matches(
+                dict(market),
+                expected_market,
+            )
+
+    expected_contract = {
+        "product": "rainbow_option",
+        "style": "european",
+        "payoff": "best_of_call",
+        "currency": "USD",
+        "notional": 10.0,
+        "underliers": ["SPX", "NDX"],
+        "spots": [100.0, 95.0],
+        "volatilities": [0.2, 0.2],
+        "dividend_rates": [0.0, 0.0],
+        "strike": 100.0,
+        "expiry_years": 1.0,
+        "exercise_style": "european",
+        "observation_style": "terminal",
+        "day_count": "ACT/365",
+        "correlation": [[1.0, 0.35], [0.35, 1.0]],
+        "domestic_rate": 0.05,
+        "n_paths": 40_000,
+        "n_steps": 1,
+        "seed": 42,
+        "mc_method": "exact",
+    }
+    expected_targets = {
+        "stulz_rainbow": {
+            "method": "analytical",
+            "route_id": "analytical_black76",
+            "route_family": "analytical",
+            "backend_binding_id": (
+                "trellis.models.analytical.terminal_basket."
+                "two_asset_extremum_option_stulz"
+            ),
+            "variant_parameters": {
+                "formula": "stulz_extremum",
+                "dimensions": 2,
+                "basket_style": "best_of",
+            },
+            "validation_bundle_id": "analytical:basket_option",
+            "payoff_family": "basket_option",
+            "exercise_style": "european",
+            "model_family": "multi_asset_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "terminal",
+        },
+        "mc_rainbow": {
+            "method": "monte_carlo",
+            "route_id": "monte_carlo_paths",
+            "route_family": "monte_carlo",
+            "backend_binding_id": "trellis.models.payoffs.terminal_basket_option_payoff",
+            "variant_parameters": {
+                "process": "exact_correlated_gbm",
+                "dimensions": 2,
+                "sampling": "pseudo_random",
+            },
+            "spec_overrides": {
+                "n_paths": 40_000,
+                "n_steps": 1,
+                "seed": 42,
+                "mc_method": "exact",
+            },
+            "validation_bundle_id": "monte_carlo:basket_option",
+            "payoff_family": "basket_option",
+            "exercise_style": "european",
+            "model_family": "multi_asset_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "terminal",
+        },
+    }
+    construct = task.get("construct")
+    construct_methods = (
+        tuple(str(item).strip() for item in construct)
+        if _nonempty_string_sequence(construct)
+        else ()
+    )
+    internal_targets = cross_validate.get("internal")
+    description = (
+        "Price a USD European terminal best-of call on SPX and NDX under the "
+        "named proof scenario. Compare the two-asset Stulz closed form with "
+        "seeded one-step exact correlated-GBM Monte Carlo."
+    )
+    valid = all(
+        (
+            _text(task.get("task_disposition")) == "executable_pricing",
+            _text(task.get("description")) == description,
+            _text(task.get("instrument_type")) == "basket_option",
+            _text(task.get("market_scenario_id"))
+            == "equity_rainbow_spx_ndx_proof",
+            canonical_market_matches,
+            "comparison_regime" not in task,
+            not any(
+                field in task
+                for field in (
+                    "expected_outcome",
+                    "expected_blocker_ids",
+                    "honest_block_contract",
+                )
+            ),
+            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            construct_methods == ("analytical", "monte_carlo"),
+            set(contract) == set(expected_contract),
+            _manifest_value_matches(contract, expected_contract),
+            set(cross_validate)
+            == {
+                "internal",
+                "reference_target",
+                "relations",
+                "tolerance_pct",
+                "target_contracts",
+                "external",
+            },
+            tuple(internal_targets or ()) == ("stulz_rainbow", "mc_rainbow"),
+            _text(cross_validate.get("reference_target")) == "stulz_rainbow",
+            _manifest_value_matches(
+                cross_validate.get("relations"),
+                {"mc_rainbow": "within_tolerance"},
+            ),
+            _manifest_value_matches(cross_validate.get("tolerance_pct"), 2.0),
+            set(targets) == set(expected_targets),
+            _manifest_value_matches(targets, expected_targets),
+            tuple(cross_validate.get("external") or ()) == ("financepy",),
+        )
+    )
+    if valid:
+        return []
+    return [
+        _issue(
+            manifest_name,
+            "legacy.terminal_basket_invalid_contract",
+            "T102 requires the bounded two-asset European terminal best-of comparison contract",
             task_id=_text(task.get("id")),
             path=path,
         )
@@ -1981,6 +2169,25 @@ def _manifest_value_matches(actual: Any, expected: Any) -> bool:
             and not isinstance(actual, bool)
             and math.isfinite(float(actual))
             and actual == expected
+        )
+    if isinstance(expected, Mapping):
+        return (
+            isinstance(actual, Mapping)
+            and set(actual) == set(expected)
+            and all(
+                _manifest_value_matches(actual[key], value)
+                for key, value in expected.items()
+            )
+        )
+    if isinstance(expected, Sequence) and not isinstance(expected, (str, bytes)):
+        return (
+            isinstance(actual, Sequence)
+            and not isinstance(actual, (str, bytes))
+            and len(actual) == len(expected)
+            and all(
+                _manifest_value_matches(actual_item, expected_item)
+                for actual_item, expected_item in zip(actual, expected, strict=True)
+            )
         )
     return actual == expected
 

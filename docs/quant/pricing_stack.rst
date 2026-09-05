@@ -1344,6 +1344,16 @@ for a positive-strike spread under correlated lognormal dynamics. See
 ``L59`` for unsupported dimensions, dynamics, exercise, and error-control
 claims.
 
+The authored T102 proof occupies one exact point inside that domain: a
+one-year SPX/NDX European best-of call with spots 100 and 95, strike 100,
+notional 10, 5% discount rate, 20% component volatilities, zero dividends,
+and 0.35 correlation. The raw Stulz result is
+``142.81201951370434``. Exact correlated-GBM Monte Carlo with 40,000 paths,
+one terminal step, and seed 42 produces ``142.37678391694178`` with standard
+error ``0.8068581682950531``; a separate 192-point Gauss-Hermite reference is
+``142.781037347788``. These are regression anchors for this authored fixture,
+not precision or support claims for arbitrary basket contracts.
+
 Single-name default-event composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

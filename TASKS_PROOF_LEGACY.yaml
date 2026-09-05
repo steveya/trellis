@@ -1794,9 +1794,37 @@ tasks:
   status: pending
 - id: T102
   title: 'Rainbow option (best-of-two): Stulz formula vs MC'
+  description: Price a USD European terminal best-of call on SPX and NDX under the named proof scenario. Compare the two-asset Stulz closed form with seeded one-step exact correlated-GBM Monte Carlo.
+  instrument_type: basket_option
+  task_disposition: executable_pricing
+  market_scenario_id: equity_rainbow_spx_ndx_proof
+  validation_policy: invariants_and_cross_method
   construct:
   - analytical
   - monte_carlo
+  benchmark_contract:
+    product: rainbow_option
+    style: european
+    payoff: best_of_call
+    currency: USD
+    notional: 10.0
+    underliers: [SPX, NDX]
+    spots: [100.0, 95.0]
+    volatilities: [0.2, 0.2]
+    dividend_rates: [0.0, 0.0]
+    strike: 100.0
+    expiry_years: 1.0
+    exercise_style: european
+    observation_style: terminal
+    day_count: ACT/365
+    correlation:
+    - [1.0, 0.35]
+    - [0.35, 1.0]
+    domestic_rate: 0.05
+    n_paths: 40000
+    n_steps: 1
+    seed: 42
+    mc_method: exact
   new_component:
   - stulz_formula
   - multi_asset_payoff
@@ -1804,6 +1832,46 @@ tasks:
     internal:
     - stulz_rainbow
     - mc_rainbow
+    reference_target: stulz_rainbow
+    relations:
+      mc_rainbow: within_tolerance
+    tolerance_pct: 2.0
+    target_contracts:
+      stulz_rainbow:
+        method: analytical
+        route_id: analytical_black76
+        route_family: analytical
+        backend_binding_id: trellis.models.analytical.terminal_basket.two_asset_extremum_option_stulz
+        variant_parameters:
+          formula: stulz_extremum
+          dimensions: 2
+          basket_style: best_of
+        validation_bundle_id: analytical:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        underlying_asset_class: equity
+        observation_style: terminal
+      mc_rainbow:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        backend_binding_id: trellis.models.payoffs.terminal_basket_option_payoff
+        variant_parameters:
+          process: exact_correlated_gbm
+          dimensions: 2
+          sampling: pseudo_random
+        spec_overrides:
+          n_paths: 40000
+          n_steps: 1
+          seed: 42
+          mc_method: exact
+        validation_bundle_id: monte_carlo:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        underlying_asset_class: equity
+        observation_style: terminal
     external:
     - financepy
   status: pending

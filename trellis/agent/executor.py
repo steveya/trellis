@@ -5308,9 +5308,9 @@ def _terminal_basket_primitive_body(
                     int(getattr(spec, "n_paths", 40000) or 40000),
                     8192,
                 ),
-                n_steps=1,
+                n_steps=max(int(getattr(spec, "n_steps", 1) or 1), 1),
                 seed=int(getattr(spec, "seed", 42) or 42),
-                method="exact",
+                method=str(getattr(spec, "mc_method", None) or "exact"),
             )
             result = engine.price(
                 get_numpy().asarray(

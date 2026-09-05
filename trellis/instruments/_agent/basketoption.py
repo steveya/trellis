@@ -43,7 +43,9 @@ class BasketOptionSpec:
     barrier_level: float | None = None
     barrier_direction: str | None = None
     n_paths: int = 40_000
+    n_steps: int = 1
     seed: int = 42
+    mc_method: str = "exact"
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
@@ -104,9 +106,9 @@ class BasketOptionPayoff:
             result = MonteCarloEngine(
                 process,
                 n_paths=max(int(spec.n_paths), 8192),
-                n_steps=1,
+                n_steps=int(spec.n_steps),
                 seed=int(spec.seed),
-                method="exact",
+                method=str(spec.mc_method),
             ).price(
                 np.asarray(semantics.constituent_spots, dtype=float),
                 float(semantics.T),

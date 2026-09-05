@@ -266,8 +266,11 @@ def benchmark_request_description(
     if strict_p006_contract is not None:
         contract = strict_p006_contract
 
-    title = str(task.get("title") or "Benchmark pricing task").strip()
     product = str(contract.get("product") or "").strip().lower()
+    if str(task.get("id") or "").strip() == "T102" and product == "rainbow_option":
+        title = "Two-asset European terminal best-of call"
+    else:
+        title = str(task.get("title") or "Benchmark pricing task").strip()
     lines = [f"Build a pricer for: {title}", ""]
 
     summary = _benchmark_summary_line(contract)
@@ -1131,6 +1134,42 @@ def _benchmark_detail_lines(
         if contract.get("replication_strikes"):
             lines.append("Replication strikes: " + ", ".join(str(item) for item in contract.get("replication_strikes") or ()) + ".")
         return lines
+    if product == "rainbow_option":
+        valuation_date = _valuation_date(contract, scenario_contract)
+        expiry_years = float(contract.get("expiry_years") or 0.0)
+        expiry_date = valuation_date + timedelta(days=round(expiry_years * 365.0))
+        underliers = tuple(str(item) for item in (contract.get("underliers") or ()))
+        spots = tuple(contract.get("spots") or ())
+        vols = tuple(contract.get("volatilities") or ())
+        dividends = tuple(contract.get("dividend_rates") or ())
+        correlation = _correlation_text(contract.get("correlation"))
+        lines = [
+            f"Contract style: {contract.get('style')} {contract.get('payoff')}.",
+            f"Notional: {contract.get('notional')} {contract.get('currency', '')}.".rstrip(),
+            f"Underliers: {', '.join(underliers)}.",
+            f"Spots: {', '.join(str(value) for value in spots)}.",
+            f"Volatilities: {', '.join(str(value) for value in vols)}.",
+            f"Dividend yields: {', '.join(str(value) for value in dividends)}.",
+            f"Strike: {contract.get('strike')}.",
+            f"Correlation: {correlation}.",
+            f"Expiry date: {expiry_date.isoformat()}.",
+            f"Exercise style: {contract.get('exercise_style')}.",
+            f"Observation style: {contract.get('observation_style')}.",
+            f"Day count: {contract.get('day_count')}.",
+            f"Domestic rate: {contract.get('domestic_rate')}.",
+        ]
+        if all(
+            contract.get(key) not in {None, ""}
+            for key in ("n_paths", "n_steps", "seed", "mc_method")
+        ):
+            lines.append(
+                "Monte Carlo controls: "
+                f"n_paths={int(contract['n_paths'])}, "
+                f"n_steps={int(contract['n_steps'])}, "
+                f"seed={int(contract['seed'])}, "
+                f"method={contract['mc_method']}."
+            )
+        return lines
     return [f"{key.replace('_', ' ').capitalize()}: {value}." for key, value in contract.items()]
 
 
@@ -1682,7 +1721,7 @@ def _rainbow_option_overrides(
     risk_free_rate = _float_or_none(contract.get("domestic_rate"))
     if risk_free_rate is None:
         risk_free_rate = _float_or_none(contract.get("risk_free_rate"))
-    return {
+    overrides = {
         "notional": _float_or_none(contract.get("notional")) or 1.0,
         "underliers": underlier_csv,
         "constituents": underlier_csv,
@@ -1694,9 +1733,15 @@ def _rainbow_option_overrides(
         "correlation": _correlation_text(contract.get("correlation")),
         "dividend_yields": ",".join(str(value) for value in (contract.get("dividend_rates") or ())),
         "basket_style": basket_style,
-        "option_type": "call",
+        "option_type": str(contract.get("option_type") or "call").strip().lower(),
         "risk_free_rate": risk_free_rate,
+        "day_count": _day_count(contract.get("day_count")),
+        "mc_method": str(contract.get("mc_method") or "").strip().lower() or None,
     }
+    for key in ("n_paths", "n_steps", "seed"):
+        if contract.get(key) not in {None, ""}:
+            overrides[key] = int(contract[key])
+    return overrides
 
 
 def _rainbow_underlier_names(

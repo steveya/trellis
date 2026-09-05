@@ -67,6 +67,7 @@ _ALLOWED_AGGREGATION_RULES = frozenset({"average_locked_returns"})
 _ALLOWED_UNDERLIER_STRUCTURES = frozenset(
     {
         "multi_asset_basket",
+        "two_asset_terminal_basket",
         "single_underlier",
         "cross_currency_single_underlier",
         "single_issuer_bond",
@@ -1635,6 +1636,7 @@ def _validate_semantic_shape(
         )
 
     dispatch = {
+        "terminal_basket_option": _validate_terminal_basket_option_shape,
         "ranked_observation_basket": _validate_ranked_observation_basket_shape,
         "vanilla_option": _validate_vanilla_option_shape,
         "lookback_option": _validate_lookback_option_shape,
@@ -1849,6 +1851,54 @@ def _validate_ranked_observation_basket_shape(
             errors.append(
                 "Multi-asset Monte Carlo semantics require correlation data in `model_parameters`."
             )
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_terminal_basket_option_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the bounded European two-asset terminal basket shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=frozenset({"equity"}),
+        require_option_type=True,
+    )
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        _CANONICAL_REQUIRED_CAPABILITIES,
+        multi_asset_requires_model_parameters=True,
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="basket_option",
+        expected_payoff_family="basket_option",
+        expected_underlier_structure="two_asset_terminal_basket",
+        expected_payoff_rule="best_of_call",
+        expected_settlement_rule="cash_settle_at_expiry",
+        expected_exercise_style="european",
+        expected_multi_asset=True,
+        require_schedule=True,
+        require_constituents=2,
+        path_dependence="terminal_markov",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+    )
+    if len(contract.product.constituents) != 2:
+        errors.append("Terminal basket option semantics require exactly two constituents.")
+    if len(contract.product.observation_schedule) != 1:
+        errors.append("Terminal basket option semantics require exactly one terminal observation.")
+    if contract.product.option_type != "call":
+        errors.append("Bounded terminal basket option semantics require option_type `call`.")
+    if "model_parameters" not in required_capabilities:
+        errors.append("Terminal basket option semantics require an explicit correlation matrix.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

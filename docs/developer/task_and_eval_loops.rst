@@ -1490,6 +1490,17 @@ call. The analytical artifact also contains no Monte Carlo import: shared
 payoff algebra lives in ``trellis.models.payoffs`` so using intrinsic value
 does not falsely claim another engine family.
 
+T102 is also an authored ingress proof rather than a title bootstrap. Its
+structured contract fixes the ordered SPX/NDX underliers, one-year European
+best-of call, USD notional 10, strike 100, flat 5% discounting, 20% component
+volatilities, zero carries, 0.35 correlation, and exact seeded terminal Monte
+Carlo controls (40,000 paths, one step, seed 42). The Stulz lane is the
+analytical reference and the Monte Carlo lane has an explicit 2% relative
+tolerance. Rendering, semantic synthesis, spec hydration, and route selection
+all consume that structure before task title text, so renaming the task cannot
+change its economics. Exact ingress validation rejects drifted or extra T102
+fields before construction.
+
 Use ``terminal_basket_option_composition`` in ``canonical/api_map.yaml`` as the
 navigation entry point. Route and backend cards must agree on the same
 primitive roles, while the three historical basket pricing wrappers remain

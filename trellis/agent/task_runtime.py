@@ -1340,7 +1340,8 @@ def _bootstrap_rate_style_swaption_description(task: dict) -> str | None:
 def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
     description = (
-        _bootstrap_ranked_observation_basket_description(task)
+        benchmark_request_description(task, root=ROOT)
+        or _bootstrap_ranked_observation_basket_description(task)
         or _bootstrap_callable_bond_description(task)
         or _bootstrap_rainbow_basket_description(task)
         or _bootstrap_rate_cap_floor_description(task)
@@ -1528,6 +1529,40 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             exercise_style="american",
             underlying_asset_class="equity",
             option_type="put",
+        )
+
+    if task_id == "T102":
+        from trellis.agent.semantic_contracts import make_terminal_basket_option_contract
+
+        contract = task.get("benchmark_contract")
+        if not isinstance(contract, Mapping):
+            raise ValueError("T102 requires a structured benchmark_contract")
+        return make_terminal_basket_option_contract(
+            description=description,
+            constituents=tuple(contract["underliers"]),
+            expiry_date=benchmark_contract_spec_overrides(task, root=ROOT)[
+                "expiry_date"
+            ].isoformat(),
+            notional=float(contract["notional"]),
+            spots=tuple(float(value) for value in contract["spots"]),
+            volatilities=tuple(
+                float(value) for value in contract["volatilities"]
+            ),
+            dividend_yields=tuple(
+                float(value) for value in contract["dividend_rates"]
+            ),
+            strike=float(contract["strike"]),
+            correlation=tuple(
+                tuple(float(value) for value in row)
+                for row in contract["correlation"]
+            ),
+            day_count=str(contract["day_count"]),
+            n_paths=int(contract["n_paths"]),
+            n_steps=int(contract["n_steps"]),
+            seed=int(contract["seed"]),
+            mc_method=str(contract["mc_method"]),
+            contract_profile="t102_two_asset_terminal_best_of_v1",
+            preferred_method="analytical",
         )
 
     return None
