@@ -1798,6 +1798,7 @@ tasks:
   instrument_type: basket_option
   task_disposition: executable_pricing
   market_scenario_id: equity_rainbow_spx_ndx_proof
+  financepy_binding_id: financepy.equity.rainbow.stulz
   validation_policy: invariants_and_cross_method
   construct:
   - analytical
@@ -1821,6 +1822,7 @@ tasks:
     - [1.0, 0.35]
     - [0.35, 1.0]
     domestic_rate: 0.05
+    num_assets: 2
     n_paths: 40000
     n_steps: 1
     seed: 42

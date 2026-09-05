@@ -442,6 +442,10 @@ def test_t102_terminal_basket_harness_reports_authored_acceptance_and_mc_control
         "seed": 42,
         "mc_method": "exact",
     }
+    assert _legacy_tasks()["T102"]["financepy_binding_id"] == (
+        "financepy.equity.rainbow.stulz"
+    )
+    assert _legacy_tasks()["T102"]["benchmark_contract"]["num_assets"] == 2
 
 
 def test_weighted_nth_to_default_overrides_preserve_name_exposure_and_spread():

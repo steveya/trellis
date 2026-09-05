@@ -230,3 +230,23 @@ def test_agent_basket_option_wrapper_uses_typed_best_of_helper_path():
     price = BasketOptionPayoff(spec).evaluate(_market_state())
 
     assert price > 0.0
+
+
+def test_agent_basket_option_wrapper_rejects_nonpositive_monte_carlo_steps():
+    from trellis.instruments._agent.basketoption import BasketOptionPayoff, BasketOptionSpec
+
+    spec = BasketOptionSpec(
+        notional=100.0,
+        underliers="SPX,NDX",
+        spots="100.0,95.0",
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        correlation="1.0,0.35;0.35,1.0",
+        basket_style="best_of",
+        option_type="call",
+        n_observations=1,
+        n_steps=0,
+    )
+
+    with pytest.raises(ValueError, match="n_steps must be at least 1"):
+        BasketOptionPayoff(spec).evaluate(_market_state())

@@ -1793,6 +1793,7 @@ def _validate_legacy_terminal_basket_comparison_contract(
         "day_count": "ACT/365",
         "correlation": [[1.0, 0.35], [0.35, 1.0]],
         "domestic_rate": 0.05,
+        "num_assets": 2,
         "n_paths": 40_000,
         "n_steps": 1,
         "seed": 42,
@@ -1862,6 +1863,8 @@ def _validate_legacy_terminal_basket_comparison_contract(
             _text(task.get("instrument_type")) == "basket_option",
             _text(task.get("market_scenario_id"))
             == "equity_rainbow_spx_ndx_proof",
+            _text(task.get("financepy_binding_id"))
+            == "financepy.equity.rainbow.stulz",
             canonical_market_matches,
             "comparison_regime" not in task,
             not any(

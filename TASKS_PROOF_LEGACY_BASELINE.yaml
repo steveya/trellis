@@ -2,7 +2,7 @@ version: 1
 manifest: TASKS_PROOF_LEGACY.yaml
 issue_count: 599
 issue_digest: 602808a81562b65423b6d26cc8fc5baea3026c4b7f27fb7c0045a627bc8b1926
-task_fingerprint: 7e380ca9d821f3c2a19d9fd1102cd4f167f67738cbdd95aa848097431a5c5fb4
+task_fingerprint: 7b0d031047dcfc697bfb9fc7b3dd5174967ad0295388e59afe45a0a676b9471e
 policy: exact_issue_identity_and_task_content
 note: >-
   This baseline freezes known contract incompleteness in the retained legacy

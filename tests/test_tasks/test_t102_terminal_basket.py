@@ -106,3 +106,23 @@ def test_t102_authored_terminal_basket_matches_seeded_monte_carlo_proof():
     assert abs(sampled - analytical) / analytical * 100.0 < task["cross_validate"][
         "tolerance_pct"
     ]
+
+
+def test_t102_authored_financepy_reference_prices_the_same_notional_contract():
+    pytest.importorskip("financepy")
+
+    from trellis.agent.financepy_reference import price_financepy_reference
+    from trellis.agent.task_manifests import load_task_manifest
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T102"
+    )
+    reference = price_financepy_reference(task)
+
+    assert reference["binding_id"] == "financepy.equity.rainbow.stulz"
+    assert reference["outputs"]["price"] == pytest.approx(
+        142.81201951370434,
+        rel=task["cross_validate"]["tolerance_pct"] / 100.0,
+    )

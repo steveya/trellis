@@ -1351,8 +1351,10 @@ and 0.35 correlation. The raw Stulz result is
 ``142.81201951370434``. Exact correlated-GBM Monte Carlo with 40,000 paths,
 one terminal step, and seed 42 produces ``142.37678391694178`` with standard
 error ``0.8068581682950531``; a separate 192-point Gauss-Hermite reference is
-``142.781037347788``. These are regression anchors for this authored fixture,
-not precision or support claims for arbitrary basket contracts.
+``142.781037347788``. The declared FinancePy Stulz binding prices the same
+notional contract at ``142.341012515284``, inside the authored 2% comparison
+band. These are regression anchors for this authored fixture, not precision or
+support claims for arbitrary basket contracts.
 
 Single-name default-event composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

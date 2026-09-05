@@ -77,6 +77,8 @@ class BasketOptionPayoff:
             )
         )
         if requires_path_runtime:
+            if int(spec.n_steps) < 1:
+                raise ValueError("n_steps must be at least 1")
             if semantics.T <= 0.0:
                 intrinsic = terminal_basket_option_payoff(
                     np.asarray([semantics.constituent_spots], dtype=float),
