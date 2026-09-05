@@ -38,7 +38,7 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | 10.2 | `QUA-1258` | Blocked | T82/T89 receive explicit callable analytics outputs |
 | 10.3 | `QUA-1254` | Backlog | T73 receives an authored European swaption contract |
 | 10.4 | `QUA-1256` | Backlog | E22 receives an authored cap-strip contract |
-| 10.5 | `QUA-1257` | In Progress | T102 receives an authored terminal-basket contract |
+| 10.5 | `QUA-1257` | Done | T102 receives an authored terminal-basket contract |
 | 10.6 | `QUA-1259` | Blocked | Remove the repaired title-derived pricing bootstraps |
 | 11 | `QUA-1251` | Blocked | Reusable variable-coupon callable-bond primitive |
 | 12 | `QUA-1252` | Blocked | Remove the implicit 5% comparison tolerance |
