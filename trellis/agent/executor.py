@@ -6838,6 +6838,7 @@ def _deterministic_exact_binding_evaluate_body(
             "Callable-bond lattice_model must be one of: bdt, hull_white"
         )
     callable_bond_pde_theta = 0.5
+    callable_bond_pde_control_kwargs: list[str] = []
     if "trellis.models.callable_bond_pde.price_callable_bond_pde" in refs:
         try:
             callable_bond_pde_theta = float(target_variants.get("theta", 0.5))
@@ -6849,6 +6850,51 @@ def _deterministic_exact_binding_evaluate_body(
             raise ValueError(
                 "Callable-bond PDE theta must be a number between 0 and 1"
             )
+        for control_name in ("n_r", "n_t"):
+            if control_name not in target_variants:
+                continue
+            raw_control = target_variants[control_name]
+            if isinstance(raw_control, bool) or not isinstance(raw_control, int):
+                raise ValueError(
+                    f"Callable-bond PDE {control_name} must be a positive integer"
+                )
+            if raw_control <= 0:
+                raise ValueError(
+                    f"Callable-bond PDE {control_name} must be a positive integer"
+                )
+            callable_bond_pde_control_kwargs.append(
+                f"{control_name}={raw_control!r}"
+            )
+        pde_bounds: dict[str, float] = {}
+        for control_name in ("r_min", "r_max"):
+            if control_name not in target_variants:
+                continue
+            try:
+                control_value = float(target_variants[control_name])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Callable-bond PDE {control_name} must be a finite number"
+                ) from exc
+            if not isfinite(control_value):
+                raise ValueError(
+                    f"Callable-bond PDE {control_name} must be a finite number"
+                )
+            pde_bounds[control_name] = control_value
+            callable_bond_pde_control_kwargs.append(
+                f"{control_name}={control_value!r}"
+            )
+        if set(pde_bounds) == {"r_min", "r_max"} and not (
+            pde_bounds["r_min"] < pde_bounds["r_max"]
+        ):
+            raise ValueError("Callable-bond PDE r_min must be less than r_max")
+    callable_bond_tree_steps: int | None = None
+    if has_callable_bond_lattice_composition and "tree_steps" in target_variants:
+        raw_tree_steps = target_variants["tree_steps"]
+        if isinstance(raw_tree_steps, bool) or not isinstance(raw_tree_steps, int):
+            raise ValueError("Callable-bond tree_steps must be a positive integer")
+        if raw_tree_steps <= 0:
+            raise ValueError("Callable-bond tree_steps must be a positive integer")
+        callable_bond_tree_steps = raw_tree_steps
     is_american_equity_option = instrument_type in {"american_put", "american_option"}
     black_scholes_vanilla_exact_binding = _is_black_scholes_vanilla_exact_binding(
         generation_plan,
@@ -8050,6 +8096,10 @@ def _deterministic_exact_binding_evaluate_body(
             f"                {argument},\n"
             for argument in callable_bond_calibration_kwargs
         )
+        if callable_bond_tree_steps is not None:
+            calibration_argument_lines += (
+                f"                n_steps={callable_bond_tree_steps!r},\n"
+            )
         return textwrap.dedent(
             f"""\
             if market_state.discount is None:
@@ -8120,6 +8170,7 @@ def _deterministic_exact_binding_evaluate_body(
                 (
                     *callable_bond_calibration_kwargs,
                     f"theta={callable_bond_pde_theta!r}",
+                    *callable_bond_pde_control_kwargs,
                 )
             )
             + ")"

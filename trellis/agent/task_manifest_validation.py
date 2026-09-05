@@ -14,6 +14,11 @@ from typing import Any
 import yaml
 
 from trellis.agent.knowledge.methods import is_known_method
+from trellis.agent.proof_fixtures import (
+    ProofFixture,
+    load_proof_fixtures,
+    materialize_task_proof_fixture,
+)
 
 
 LEGACY_TASKS_MANIFEST = "TASKS_PROOF_LEGACY.yaml"
@@ -95,10 +100,25 @@ def legacy_issue_digest(issues: Sequence[TaskManifestIssue]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def legacy_task_fingerprint(tasks: Sequence[Mapping[str, Any]]) -> str:
+def legacy_task_fingerprint(
+    tasks: Sequence[Mapping[str, Any]],
+    *,
+    proof_fixtures: Mapping[str, ProofFixture] | None = None,
+) -> str:
     """Digest normalized legacy task content, including authored semantics."""
+    fixtures_payload = {
+        fixture_id: {
+            "schema_version": fixture.schema_version,
+            "fixture_digest": fixture.fixture_digest,
+            "task_fields": fixture.materialized_fields(),
+        }
+        for fixture_id, fixture in sorted(dict(proof_fixtures or {}).items())
+    }
     payload = yaml.safe_dump(
-        [dict(task) for task in tasks],
+        {
+            "proof_fixtures": fixtures_payload,
+            "tasks": [dict(task) for task in tasks],
+        },
         allow_unicode=True,
         sort_keys=True,
     ).encode("utf-8")
@@ -118,6 +138,7 @@ def audit_task_manifests(
     scenario_ids = _load_registry_ids(root / "MARKET_SCENARIOS.yaml", "scenarios")
     binding_ids = _load_registry_ids(root / "FINANCEPY_BINDINGS.yaml", "bindings")
     legacy_tasks: list[Mapping[str, Any]] = []
+    legacy_proof_fixtures: dict[str, ProofFixture] = {}
     resolved_root = root.resolve()
 
     for manifest_name in manifest_names:
@@ -135,6 +156,20 @@ def audit_task_manifests(
             continue
         tasks, structural_issues = _read_tasks(manifest_path, manifest_name)
         blocking.extend(structural_issues)
+        proof_fixtures: dict[str, ProofFixture] = {}
+        if manifest_name == LEGACY_TASKS_MANIFEST and not structural_issues:
+            try:
+                proof_fixtures = load_proof_fixtures(manifest_name, root=root)
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                blocking.append(
+                    _issue(
+                        manifest_name,
+                        "manifest.invalid_proof_fixtures",
+                        f"cannot load proof fixtures: {exc}",
+                        path="proof_fixtures",
+                    )
+                )
+            legacy_proof_fixtures = proof_fixtures
         for index, task in tasks:
             path = f"tasks[{index}]"
             task_id = _text(task.get("id"))
@@ -164,8 +199,29 @@ def audit_task_manifests(
                 blocking.extend(_validate_framework_task(manifest_name, task, path))
             elif manifest_name == LEGACY_TASKS_MANIFEST:
                 legacy_tasks.append(task)
+                validation_task = task
+                try:
+                    validation_task = materialize_task_proof_fixture(
+                        task,
+                        fixtures=proof_fixtures,
+                    )
+                except ValueError as exc:
+                    blocking.append(
+                        _issue(
+                            manifest_name,
+                            "manifest.invalid_proof_fixture_reference",
+                            str(exc),
+                            task_id=task_id,
+                            path=f"{path}.proof_fixture_id",
+                        )
+                    )
                 legacy.extend(
-                    _validate_legacy_task(manifest_name, task, path, root=root)
+                    _validate_legacy_task(
+                        manifest_name,
+                        validation_task,
+                        path,
+                        root=root,
+                    )
                 )
 
     for task_id, locations in located_ids.items():
@@ -184,7 +240,10 @@ def audit_task_manifests(
             )
 
     if LEGACY_TASKS_MANIFEST in manifest_names:
-        fingerprint = legacy_task_fingerprint(legacy_tasks)
+        fingerprint = legacy_task_fingerprint(
+            legacy_tasks,
+            proof_fixtures=legacy_proof_fixtures,
+        )
         baseline_path = (root / legacy_baseline_name).resolve()
         try:
             baseline_path.relative_to(resolved_root)
@@ -1502,6 +1561,16 @@ def _validate_legacy_task(
             )
         )
 
+    if task_id in {"T02", "T17"}:
+        issues.extend(
+            _validate_legacy_callable_bond_comparison_contract(
+                manifest_name,
+                task,
+                path,
+                root=root,
+            )
+        )
+
     if disposition == "expected_honest_block":
         issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
         return issues
@@ -1573,6 +1642,277 @@ def _validate_legacy_task(
             )
         )
     return issues
+
+
+def _validate_legacy_callable_bond_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+    *,
+    root: Path | None = None,
+) -> list[TaskManifestIssue]:
+    """Keep T02/T17 on one exact, reusable fixed-coupon proof fixture."""
+    task_id = _text(task.get("id"))
+    contract = task.get("benchmark_contract")
+    cross_validate = task.get("cross_validate")
+    contract = contract if isinstance(contract, Mapping) else {}
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+    repository_root = root or Path(__file__).resolve().parents[2]
+
+    fixture_metadata_valid = False
+    try:
+        fixture = load_proof_fixtures(
+            LEGACY_TASKS_MANIFEST,
+            root=repository_root,
+        ).get("usd_fixed_coupon_callable_bond_5pct_2025_2035_v1")
+        fixture_metadata_valid = bool(
+            fixture is not None
+            and task.get("proof_fixture_schema_version") == fixture.schema_version
+            and _text(task.get("proof_fixture_digest")) == fixture.fixture_digest
+        )
+    except (OSError, ValueError, yaml.YAMLError):
+        fixture_metadata_valid = False
+
+    expected_contract = {
+        "product": "callable_bond",
+        "currency": "USD",
+        "notional": 100.0,
+        "coupon": 0.05,
+        "start_date": "2025-01-15",
+        "end_date": "2035-01-15",
+        "call_dates": ["2028-01-15", "2030-01-15", "2032-01-15"],
+        "call_price": 100.0,
+        "frequency": "semi_annual",
+        "day_count": "ACT/365",
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+        "coupon_rate_unit": "decimal_annual_rate",
+        "call_price_quote_unit": "price_points_per_100_par",
+        "tolerance_unit": "percent_of_reference_price",
+    }
+    common_target = {
+        "validation_bundle_id": "rate_tree:callable_bond",
+        "payoff_family": "callable_fixed_income",
+        "exercise_style": "issuer_call",
+        "model_family": "interest_rate",
+        "observation_style": "exercise_schedule",
+    }
+    if task_id == "T02":
+        expected_description = (
+            "Price the named USD fixed-coupon callable-bond proof fixture with "
+            "BDT and Hull-White short-rate trees. Report holder present value "
+            "in USD for 100 face and compare BDT with the Hull-White reference "
+            "under the authored one-percent relative-price tolerance."
+        )
+        expected_construct = "lattice"
+        expected_cross_validate = {
+            "internal": ["bdt_tree", "hull_white_tree"],
+            "reference_target": "hull_white_tree",
+            "relations": {"bdt_tree": "within_tolerance"},
+            "tolerance_pct": 1.0,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "target_contracts": {
+                "bdt_tree": {
+                    "method": "rate_tree",
+                    "route_id": "exercise_lattice",
+                    "route_family": "rate_lattice",
+                    "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+                    "variant_parameters": {
+                        "lattice_model": "bdt",
+                        "model_parameter_set": "callable_fixed_5pct_proof:bdt",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.2,
+                        "tree_steps": 200,
+                    },
+                    **common_target,
+                },
+                "hull_white_tree": {
+                    "method": "rate_tree",
+                    "route_id": "exercise_lattice",
+                    "route_family": "rate_lattice",
+                    "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+                    "variant_parameters": {
+                        "lattice_model": "hull_white",
+                        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+                        "mean_reversion": 0.1,
+                        "sigma": 0.01,
+                        "tree_steps": 200,
+                    },
+                    **common_target,
+                },
+            },
+            "external": ["financepy", "quantlib"],
+        }
+    else:
+        expected_description = (
+            "Price the named USD fixed-coupon callable-bond proof fixture with "
+            "the event-aware Hull-White theta PDE and the Hull-White short-rate "
+            "tree. Report holder present value in USD for 100 face and compare "
+            "the PDE with the tree reference under the authored quarter-percent "
+            "relative-price tolerance."
+        )
+        expected_construct = ["pde", "lattice"]
+        expected_cross_validate = {
+            "internal": ["hw_pde_theta", "hw_rate_tree"],
+            "reference_target": "hw_rate_tree",
+            "relations": {"hw_pde_theta": "within_tolerance"},
+            "tolerance_pct": 0.25,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "target_contracts": {
+                "hw_pde_theta": {
+                    "method": "pde_solver",
+                    "route_id": "pde_theta_1d",
+                    "route_family": "pde_solver",
+                    "backend_binding_id": "trellis.models.callable_bond_pde.price_callable_bond_pde",
+                    "variant_parameters": {
+                        "pricing_method": "pde_solver",
+                        "theta": 0.5,
+                        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+                        "mean_reversion": 0.1,
+                        "sigma": 0.01,
+                        "n_r": 201,
+                        "n_t": 500,
+                        "r_min": -0.1,
+                        "r_max": 0.2,
+                    },
+                    "validation_bundle_id": "pde_solver:callable_bond",
+                    "payoff_family": "callable_fixed_income",
+                    "exercise_style": "issuer_call",
+                    "model_family": "interest_rate",
+                    "observation_style": "exercise_schedule",
+                },
+                "hw_rate_tree": {
+                    "method": "rate_tree",
+                    "route_id": "exercise_lattice",
+                    "route_family": "rate_lattice",
+                    "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+                    "variant_parameters": {
+                        "pricing_method": "rate_tree",
+                        "lattice_model": "hull_white",
+                        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+                        "mean_reversion": 0.1,
+                        "sigma": 0.01,
+                        "tree_steps": 200,
+                    },
+                    **common_target,
+                },
+            },
+            "external": ["quantlib"],
+        }
+
+    scenario_valid = False
+    canonical_market_matches = task.get("market") is None
+    try:
+        from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+        scenarios = load_market_scenario_contracts(root=repository_root)
+        scenario = scenarios.get("usd_callable_fixed_5pct_proof")
+        scenario_valid = bool(
+            scenario is not None
+            and scenario.source == "mock"
+            and scenario.as_of.isoformat() == "2025-01-15"
+            and scenario.valuation_date is not None
+            and scenario.valuation_date.isoformat() == "2025-01-15"
+            and scenario.constructor_kind == "flat_rates"
+            and scenario.domestic_rate == 0.05
+            and scenario.black_vol == 0.2
+            and dict(scenario.selected_components)
+            == {
+                "discount_curve": "usd_callable_flat_5pct",
+                "vol_surface": "callable_short_rate_vol_proof",
+            }
+            and _manifest_value_matches(
+                scenario.model_parameter_sets,
+                {
+                    "callable_fixed_5pct_proof:bdt": {
+                        "parameter_set_name": "callable_fixed_5pct_proof:bdt",
+                        "model_family": "bdt",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.2,
+                        "sigma_unit": "relative_rate",
+                        "source_kind": "explicit_proof_fixture",
+                    },
+                    "callable_fixed_5pct_proof:hull_white": {
+                        "parameter_set_name": "callable_fixed_5pct_proof:hull_white",
+                        "model_family": "hull_white",
+                        "mean_reversion": 0.1,
+                        "sigma": 0.01,
+                        "sigma_unit": "absolute_decimal_rate",
+                        "source_kind": "explicit_proof_fixture",
+                    },
+                },
+            )
+        )
+        market = task.get("market")
+        if scenario is not None and isinstance(market, Mapping):
+            expected_market = {
+                "source": scenario.source,
+                "as_of": scenario.as_of.isoformat(),
+                **dict(scenario.selected_components),
+                "scenario_contract": scenario.to_payload(),
+                "scenario_digest": scenario.scenario_digest,
+                "scenario_schema_version": scenario.schema_version,
+                "scenario_constructor_kind": scenario.constructor_kind,
+            }
+            benchmark_inputs = scenario.financepy_inputs()
+            if benchmark_inputs:
+                expected_market["benchmark_inputs"] = benchmark_inputs
+            canonical_market_matches = _manifest_value_matches(
+                dict(market),
+                expected_market,
+            )
+    except (OSError, ValueError, yaml.YAMLError):
+        scenario_valid = False
+        canonical_market_matches = False
+
+    valid = all(
+        (
+            _text(task.get("task_disposition")) == "named_proof_fixture",
+            _text(task.get("proof_fixture_id"))
+            == "usd_fixed_coupon_callable_bond_5pct_2025_2035_v1",
+            fixture_metadata_valid,
+            _text(task.get("description")) == expected_description,
+            _text(task.get("instrument_type")) == "callable_bond",
+            _text(task.get("market_scenario_id"))
+            == "usd_callable_fixed_5pct_proof",
+            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            "comparison_regime" not in task,
+            not any(
+                field in task
+                for field in (
+                    "expected_outcome",
+                    "expected_blocker_ids",
+                    "honest_block_contract",
+                )
+            ),
+            scenario_valid,
+            canonical_market_matches,
+            task.get("construct") == expected_construct,
+            set(contract) == set(expected_contract),
+            _manifest_value_matches(contract, expected_contract),
+            set(cross_validate) == set(expected_cross_validate),
+            set(targets) == set(expected_cross_validate["target_contracts"]),
+            _manifest_value_matches(cross_validate, expected_cross_validate),
+        )
+    )
+    if valid:
+        return []
+    return [
+        _issue(
+            manifest_name,
+            "legacy.callable_bond_invalid_contract",
+            "T02/T17 require the exact named fixed-coupon callable-bond proof contract",
+            task_id=task_id,
+            path=path,
+        )
+    ]
 
 
 def _validate_legacy_lookback_comparison_contract(

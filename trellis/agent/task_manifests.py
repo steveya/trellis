@@ -10,7 +10,14 @@ from typing import Any
 import yaml
 
 from trellis.agent.market_scenarios import load_market_scenario_contracts
-from trellis.agent.task_manifest_validation import assert_valid_task_manifests
+from trellis.agent.proof_fixtures import (
+    load_proof_fixtures,
+    materialize_task_proof_fixture,
+)
+from trellis.agent.task_manifest_validation import (
+    LEGACY_TASKS_MANIFEST,
+    assert_valid_task_manifests,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -167,11 +174,23 @@ def load_task_manifest(
 
     corpus_name = _manifest_to_corpus_name(manifest_name)
     scenarios = _load_market_scenarios_mapping(root)
+    proof_fixtures = (
+        load_proof_fixtures(manifest_name, root=root)
+        if manifest_name == LEGACY_TASKS_MANIFEST
+        else {}
+    )
     normalized: list[dict[str, Any]] = []
     for task in tasks:
         if not isinstance(task, Mapping):
             continue
-        payload = dict(task)
+        payload = (
+            materialize_task_proof_fixture(
+                task,
+                fixtures=proof_fixtures,
+            )
+            if manifest_name == LEGACY_TASKS_MANIFEST
+            else dict(task)
+        )
         payload["task_corpus"] = corpus_name
         payload["task_definition_version"] = version
         payload["task_definition_manifest"] = manifest_name

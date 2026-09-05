@@ -448,6 +448,123 @@ def test_t102_terminal_basket_harness_reports_authored_acceptance_and_mc_control
     assert _legacy_tasks()["T102"]["benchmark_contract"]["num_assets"] == 2
 
 
+@pytest.mark.parametrize("task_id", ("T02", "T17"))
+def test_callable_proof_fixture_renders_and_hydrates_without_hidden_defaults(task_id):
+    task = _legacy_tasks()[task_id]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert canonical_benchmark_instrument_type(task) == "callable_bond"
+    assert description is not None
+    assert "Build a pricer for: USD fixed-coupon callable bond proof" in description
+    assert "Notional: 100.0 USD." in description
+    assert "Coupon: 0.05 paid semi_annual." in description
+    assert "Start date: 2025-01-15." in description
+    assert "Maturity date: 2035-01-15." in description
+    assert (
+        "Issuer call dates: 2028-01-15, 2030-01-15, 2032-01-15 at 100.0."
+        in description
+    )
+    assert "Day count: ACT/365." in description
+    assert overrides == {
+        "notional": pytest.approx(100.0),
+        "coupon": pytest.approx(0.05),
+        "start_date": date(2025, 1, 15),
+        "end_date": date(2035, 1, 15),
+        "call_dates": (
+            date(2028, 1, 15),
+            date(2030, 1, 15),
+            date(2032, 1, 15),
+        ),
+        "call_price": pytest.approx(100.0),
+        "frequency": Frequency.SEMI_ANNUAL,
+        "day_count": DayCountConvention.ACT_365,
+    }
+
+
+def test_generic_callable_bond_rendering_does_not_claim_the_usd_proof_fixture():
+    task = deepcopy(_legacy_tasks()["T02"])
+    task["id"] = "CALLABLE-DEMO"
+    task["title"] = "EUR callable bond scenario"
+    task.pop("proof_fixture_id", None)
+    task["benchmark_contract"]["currency"] = "EUR"
+    task["benchmark_contract"]["output_currency"] = "EUR"
+
+    description = benchmark_request_description(task, root=ROOT)
+
+    assert description is not None
+    assert "Build a pricer for: EUR callable bond scenario" in description
+    assert "USD fixed-coupon callable bond proof" not in description
+
+
+@pytest.mark.parametrize("task_id", ("T02", "T17"))
+def test_callable_proof_fixture_rendering_and_overrides_ignore_title(task_id):
+    task = _legacy_tasks()[task_id]
+    renamed = deepcopy(task)
+    renamed["title"] = "An unrelated display label with no pricing economics"
+
+    assert benchmark_request_description(renamed, root=ROOT) == benchmark_request_description(
+        task,
+        root=ROOT,
+    )
+    assert benchmark_spec_overrides(renamed, root=ROOT) == benchmark_spec_overrides(
+        task,
+        root=ROOT,
+    )
+
+
+def test_callable_proof_harnesses_report_authored_acceptance_and_controls():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    tasks = _legacy_tasks()
+    t02 = build_comparison_harness_plan(tasks["T02"])
+    t17 = build_comparison_harness_plan(tasks["T17"])
+    t02_targets = {target.target_id: target for target in t02.targets}
+    t17_targets = {target.target_id: target for target in t17.targets}
+
+    assert t02.reference_target == "hull_white_tree"
+    assert t02.tolerance_pct == pytest.approx(1.0)
+    assert t02_targets["bdt_tree"].relation == "within_tolerance"
+    assert t02_targets["bdt_tree"].contract.variant_parameters == {
+        "lattice_model": "bdt",
+        "model_parameter_set": "callable_fixed_5pct_proof:bdt",
+        "mean_reversion": 0.05,
+        "sigma": 0.2,
+        "tree_steps": 200,
+    }
+    assert t02_targets["hull_white_tree"].contract.variant_parameters == {
+        "lattice_model": "hull_white",
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+        "tree_steps": 200,
+    }
+
+    assert t17.reference_target == "hw_rate_tree"
+    assert t17.tolerance_pct == pytest.approx(0.25)
+    assert t17_targets["hw_pde_theta"].relation == "within_tolerance"
+    assert t17_targets["hw_pde_theta"].contract.variant_parameters == {
+        "pricing_method": "pde_solver",
+        "theta": 0.5,
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+        "n_r": 201,
+        "n_t": 500,
+        "r_min": -0.1,
+        "r_max": 0.2,
+    }
+    assert t17_targets["hw_rate_tree"].contract.variant_parameters == {
+        "pricing_method": "rate_tree",
+        "lattice_model": "hull_white",
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+        "tree_steps": 200,
+    }
+
+
 def test_weighted_nth_to_default_overrides_preserve_name_exposure_and_spread():
     task = _extension_tasks()["P006"]
 

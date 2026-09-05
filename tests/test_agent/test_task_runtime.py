@@ -1076,6 +1076,28 @@ def test_build_market_state_for_task_materializes_market_scenario_contract():
     assert overrides["expiry_date"] == date(2025, 11, 15)
 
 
+def test_build_market_state_for_task_constructs_callable_fixture_without_snapshot_aliases():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state_for_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T02"
+    )
+
+    market_state, market_context = build_market_state_for_task(task)
+
+    assert market_state.as_of == date(2025, 1, 15)
+    assert market_state.settlement == date(2025, 1, 15)
+    assert market_state.discount.value_date == date(2025, 1, 15)
+    assert market_state.discount.zero_rate(1.0) == pytest.approx(0.05)
+    assert {
+        "callable_fixed_5pct_proof:bdt",
+        "callable_fixed_5pct_proof:hull_white",
+    }.issubset(market_state.model_parameter_sets or {})
+    assert market_context["metadata"]["scenario_construction_kind"] == "flat_rates"
+
 def test_task_to_instrument_type_prefers_explicit_task_field():
     from trellis.agent.task_runtime import task_to_instrument_type
 
@@ -3012,6 +3034,9 @@ def test_sparse_wrong_way_proof_row_uses_independent_cva_reference(monkeypatch, 
     assert result["cross_validation"]["comparison_relations"] == {"correlated_cva": ">="}
     assert result["cross_validation"]["prices"]["correlated_cva"] > result["cross_validation"]["prices"]["independent_cva"]
     assert result["method_results"]["independent_cva"]["reference_target"] is True
+    assert result["method_results"]["independent_cva"]["acceptance"] == (
+        result["cross_validation"]["target_acceptance"]["independent_cva"]
+    )
 
 
 def test_sparse_credit_index_option_row_uses_deterministic_spread_targets(monkeypatch, tmp_path):
@@ -3376,7 +3401,12 @@ def test_cross_validate_comparison_task_respects_directional_relations():
         comparison_targets,
         live_results,
         market_state=object(),
-        configured_targets={"tolerance_pct": 0.5},
+        configured_targets={
+            "tolerance_pct": 0.5,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+        },
         payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
         price_fn=lambda payoff, market_state: payoff.price,
     )
@@ -3389,6 +3419,38 @@ def test_cross_validate_comparison_task_respects_directional_relations():
     }
     assert result["passed_targets"] == ["tree_lower"]
     assert result["failed_targets"] == ["tree_upper"]
+    assert result["target_acceptance"] == {
+        "black_scholes": {
+            "role": "reference",
+            "relation": "reference",
+            "reference_target": "black_scholes",
+            "tolerance_pct": 0.5,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "status": "reference",
+            "output_currency": "USD",
+        },
+        "tree_upper": {
+            "role": "comparison",
+            "relation": "<=",
+            "reference_target": "black_scholes",
+            "tolerance_pct": 0.5,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "status": "failed",
+            "output_currency": "USD",
+        },
+        "tree_lower": {
+            "role": "comparison",
+            "relation": ">=",
+            "reference_target": "black_scholes",
+            "tolerance_pct": 0.5,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "status": "passed",
+            "output_currency": "USD",
+        },
+    }
 
 
 def test_cross_validate_comparison_task_validates_configured_native_outputs():
@@ -3462,6 +3524,70 @@ def test_cross_validate_comparison_task_validates_configured_native_outputs():
     assert spread_validation["status"] == "passed"
     assert spread_validation["tolerance_pct"] == 10.0
     assert spread_validation["missing_targets"] == []
+    assert result["target_acceptance"]["sampled"]["output_acceptance"] == {
+        "spread_cs01": {
+            "status": "passed",
+            "reference_target": "median_internal",
+            "tolerance_pct": 10.0,
+            "value": 3_360.0,
+            "deviation_pct": 2.439,
+        }
+    }
+
+    failed = _cross_validate_comparison_task(
+        comparison_targets,
+        live_results,
+        market_state=object(),
+        configured_targets={
+            "tolerance_pct": 3.0,
+            "output_tolerances_pct": {"spread_cs01": 1.0},
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+    )
+
+    assert failed["status"] == "failed"
+    assert failed["target_acceptance"]["sampled"]["status"] == "failed"
+    assert failed["target_acceptance"]["sampled"]["output_acceptance"] == {
+        "spread_cs01": {
+            "status": "failed",
+            "reference_target": "median_internal",
+            "tolerance_pct": 1.0,
+            "value": 3_360.0,
+            "deviation_pct": 2.439,
+        }
+    }
+
+    reference_without_secondary_output = type(
+        "PriceOnlyReferencePayoff",
+        (),
+        {"benchmark_outputs": lambda self, _market_state: {"price": 120_000.0}},
+    )
+    missing_reference_output_results = {
+        **live_results,
+        "copula": FakeResult(
+            "copula",
+            reference_without_secondary_output,
+            "analytical",
+        ),
+    }
+    missing = _cross_validate_comparison_task(
+        comparison_targets,
+        missing_reference_output_results,
+        market_state=object(),
+        configured_targets={
+            "tolerance_pct": 3.0,
+            "output_tolerances_pct": {"spread_cs01": 1.0},
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+    )
+
+    assert missing["status"] == "failed"
+    assert missing["output_validation"]["spread_cs01"]["status"] == (
+        "insufficient_results"
+    )
+    assert missing["target_acceptance"]["sampled"]["status"] == (
+        "insufficient_results"
+    )
 
 
 def test_task_comparison_targets_promote_t51_cds_targets_to_analytical_lane():
@@ -5314,21 +5440,81 @@ def test_prepare_existing_task_uses_quanto_family_compiled_requirements(monkeypa
     }]
 
 
-def test_effective_task_description_bootstraps_title_only_callable_bond_tasks():
+@pytest.mark.parametrize("task_id", ("T02", "T17"))
+def test_effective_task_description_uses_authored_callable_fixture_not_title_bootstrap(
+    monkeypatch,
+    task_id,
+):
+    from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import _effective_task_description
 
-    description = _effective_task_description(
-        {
-            "id": "T17",
-            "title": "Callable bond: HW event-aware theta PDE vs HW tree",
-            "construct": ["pde", "lattice"],
-            "cross_validate": {"internal": ["hw_pde_theta", "hw_rate_tree"]},
-        }
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
     )
 
-    assert "issuer call dates 2028-01-15, 2030-01-15, and 2032-01-15" in description
-    assert "5% semi-annual coupon" in description
-    assert "Comparison targets: hw_pde_theta (pde_solver), hw_rate_tree (rate_tree)" in description
+    def forbidden_bootstrap(_task):
+        raise AssertionError("authored callable proofs must not use title bootstrap")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._bootstrap_callable_bond_description",
+        forbidden_bootstrap,
+    )
+
+    description = _effective_task_description(task)
+
+    assert "USD fixed-coupon callable bond proof" in description
+    assert "Issuer call dates: 2028-01-15, 2030-01-15, 2032-01-15 at 100.0." in description
+    assert "Coupon: 0.05 paid semi_annual." in description
+
+
+@pytest.mark.parametrize("task_id", ("T02", "T17"))
+def test_proof_legacy_callable_semantic_contract_uses_authored_call_schedule(task_id):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import (
+        _effective_task_description,
+        _proof_legacy_semantic_contract,
+    )
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+    contract = _proof_legacy_semantic_contract(
+        task,
+        _effective_task_description(task),
+    )
+
+    assert contract is not None
+    assert contract.product.semantic_id == "callable_bond"
+    assert contract.product.observation_schedule == (
+        "2028-01-15",
+        "2030-01-15",
+        "2032-01-15",
+    )
+    assert dict(contract.product.term_fields) == {
+        "currency": "USD",
+        "notional": 100.0,
+        "coupon": 0.05,
+        "start_date": "2025-01-15",
+        "end_date": "2035-01-15",
+        "call_dates": (
+            "2028-01-15",
+            "2030-01-15",
+            "2032-01-15",
+        ),
+        "call_price": 100.0,
+        "frequency": "semi_annual",
+        "day_count": "ACT/365",
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+        "coupon_rate_unit": "decimal_annual_rate",
+        "call_price_quote_unit": "price_points_per_100_par",
+        "tolerance_unit": "percent_of_reference_price",
+    }
 
 
 def test_effective_task_description_never_bootstraps_declared_honest_block():

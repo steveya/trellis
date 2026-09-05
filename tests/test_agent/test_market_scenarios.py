@@ -58,6 +58,55 @@ def test_p005_usd_rates_scenario_isolates_named_hull_white_parameters():
     )
 
 
+def test_callable_proof_scenario_authors_curve_models_and_valuation_date():
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.core.market_state import MarketState
+
+    contract = load_market_scenario_contracts(root=ROOT)[
+        "usd_callable_fixed_5pct_proof"
+    ]
+
+    assert contract.as_of == date(2025, 1, 15)
+    assert contract.valuation_date == date(2025, 1, 15)
+    assert contract.domestic_rate == pytest.approx(0.05)
+    assert contract.model_parameter_sets == {
+        "callable_fixed_5pct_proof:bdt": {
+            "parameter_set_name": "callable_fixed_5pct_proof:bdt",
+            "model_family": "bdt",
+            "mean_reversion": 0.05,
+            "sigma": 0.2,
+            "sigma_unit": "relative_rate",
+            "source_kind": "explicit_proof_fixture",
+        },
+        "callable_fixed_5pct_proof:hull_white": {
+            "parameter_set_name": "callable_fixed_5pct_proof:hull_white",
+            "model_family": "hull_white",
+            "mean_reversion": 0.1,
+            "sigma": 0.01,
+            "sigma_unit": "absolute_decimal_rate",
+            "source_kind": "explicit_proof_fixture",
+        },
+    }
+
+    market_state, _ = construct_market_state_for_scenario(
+        contract,
+        MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+        ),
+        task_id="T02",
+    )
+
+    assert market_state.as_of == date(2025, 1, 15)
+    assert market_state.settlement == date(2025, 1, 15)
+    assert market_state.discount is not None
+    assert market_state.discount.zero_rate(10.0) == pytest.approx(0.05)
+    assert market_state.model_parameter_sets == contract.model_parameter_sets
+
+
 def test_embedded_market_scenario_round_trip_preserves_named_model_parameter_sets():
     from trellis.agent.market_scenarios import (
         load_market_scenario_contracts,

@@ -189,10 +189,20 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
         "trellis.models.trees.algebra.price_on_lattice"
     )
     assert t02["bdt_tree"].validation_bundle_id == "rate_tree:callable_bond"
-    assert t02["bdt_tree"].variant_parameters == {"lattice_model": "bdt"}
+    assert t02["bdt_tree"].variant_parameters == {
+        "lattice_model": "bdt",
+        "model_parameter_set": "callable_fixed_5pct_proof:bdt",
+        "mean_reversion": 0.05,
+        "sigma": 0.2,
+        "tree_steps": 200,
+    }
     assert t02["bdt_tree"].spec_overrides == {}
     assert t02["hull_white_tree"].variant_parameters == {
-        "lattice_model": "hull_white"
+        "lattice_model": "hull_white",
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+        "tree_steps": 200,
     }
     assert t02["hull_white_tree"].exercise_style == "issuer_call"
     assert t02["hull_white_tree"].observation_style == "exercise_schedule"
@@ -226,9 +236,13 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     assert t17["hw_pde_theta"].variant_parameters == {
         "pricing_method": "pde_solver",
         "theta": 0.5,
-        "model_parameter_set": "t17_hull_white_comparison:hull_white",
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
         "mean_reversion": 0.1,
         "sigma": 0.01,
+        "n_r": 201,
+        "n_t": 500,
+        "r_min": -0.1,
+        "r_max": 0.2,
     }
     assert t17["hw_rate_tree"].method == "rate_tree"
     assert t17["hw_rate_tree"].backend_binding_id == (
@@ -237,9 +251,10 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     assert t17["hw_rate_tree"].variant_parameters == {
         "pricing_method": "rate_tree",
         "lattice_model": "hull_white",
-        "model_parameter_set": "t17_hull_white_comparison:hull_white",
+        "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
         "mean_reversion": 0.1,
         "sigma": 0.01,
+        "tree_steps": 200,
     }
 
 

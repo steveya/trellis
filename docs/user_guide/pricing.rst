@@ -1297,6 +1297,16 @@ results. They are declared as research, proof, and rewrite holds with explicit
 pricing. To reactivate one, author those inputs and an acceptance contract in
 a reviewed pricing or proof manifest; do not rely on the title to supply them.
 
+Two retained fixed-coupon callable-bond proofs are now self-contained. ``T02``
+compares an authored BDT tree with a Hull-White tree reference, and ``T17``
+compares an event-aware Hull-White theta PDE with the same Hull-White tree
+reference. Both use the named 100 USD face, 5% semi-annual 2025--2035 bond,
+its three dated issuer calls, a flat 5% market dated 2025-01-15, explicit model
+parameters and grids, and output/tolerance units. Changing a task title cannot
+change those economics. These rows demonstrate the bounded fixed-coupon
+issuer-call route; they do not imply support for step-up/floating coupons,
+arbitrary callable products, PSOR, or an independent external BDT benchmark.
+
 Some retained rows are intentionally executable only as certified honest
 blocks. For example, T09 asks for a step-up callable bond without supplying the
 dated coupon schedule, while the checked callable-bond routes currently accept

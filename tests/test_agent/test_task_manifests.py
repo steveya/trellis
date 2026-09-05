@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -104,6 +106,115 @@ def test_load_task_manifest_materializes_market_from_scenario(tmp_path):
     assert task["market"]["benchmark_inputs"]["stock_price"] == 100.0
     assert task["market"]["benchmark_inputs"]["domestic_rate"] == 0.05
     assert task["market"]["scenario_digest"]
+
+
+def test_load_task_manifest_materializes_one_named_proof_fixture(tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    fixture = {
+        "instrument_type": "callable_bond",
+        "benchmark_contract": {
+            "product": "callable_bond",
+            "notional": 100.0,
+            "coupon": 0.05,
+        },
+    }
+    (tmp_path / "TASKS_PROOF_LEGACY.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "proof_fixtures": {"callable_fixed_v1": fixture},
+                "tasks": [
+                    {
+                        "id": "T900",
+                        "title": "Display-only title",
+                        "status": "pending",
+                        "proof_fixture_id": "callable_fixed_v1",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    task = load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=tmp_path)[0]
+
+    assert task["instrument_type"] == "callable_bond"
+    assert task["benchmark_contract"] == fixture["benchmark_contract"]
+    assert task["proof_fixture_id"] == "callable_fixed_v1"
+    assert task["proof_fixture_schema_version"] == 1
+    assert task["proof_fixture_digest"]
+
+
+def test_named_proof_fixture_rejects_task_level_economic_overrides(tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    fixture = {
+        "instrument_type": "callable_bond",
+        "benchmark_contract": {
+            "product": "callable_bond",
+            "notional": 100.0,
+            "coupon": 0.05,
+        },
+    }
+    task = {
+        "id": "T900",
+        "title": "Display-only title",
+        "status": "pending",
+        "proof_fixture_id": "callable_fixed_v1",
+        "benchmark_contract": deepcopy(fixture["benchmark_contract"]),
+    }
+    task["benchmark_contract"]["coupon"] = 0.06
+    (tmp_path / "TASKS_PROOF_LEGACY.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "proof_fixtures": {"callable_fixed_v1": fixture},
+                "tasks": [task],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot override proof fixture"):
+        load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=tmp_path)
+
+
+def test_named_proof_fixture_is_not_materialized_for_modern_corpora(tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    (tmp_path / "TASKS_EXTENSION.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "proof_fixtures": {
+                    "unvalidated_fixture": {
+                        "benchmark_contract": {
+                            "product": "callable_bond",
+                            "coupon": 0.05,
+                        }
+                    }
+                },
+                "tasks": [
+                    {
+                        "id": "P900",
+                        "title": "Modern schema boundary",
+                        "status": "pending",
+                        "proof_fixture_id": "unvalidated_fixture",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    task = load_task_manifest("TASKS_EXTENSION.yaml", root=tmp_path)[0]
+
+    assert "benchmark_contract" not in task
+    assert "proof_fixture_digest" not in task
 
 
 def test_filter_loaded_tasks_supports_corpus_and_exact_id_selection():

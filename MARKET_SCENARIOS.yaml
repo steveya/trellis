@@ -135,6 +135,34 @@ scenarios:
           source_kind: calibrated
           calibration_source: usd_rates_smile_mock_calibration_v1
 
+  usd_callable_fixed_5pct_proof:
+    source: mock
+    as_of: "2025-01-15"
+    description: Bounded flat-rate proof market for the authored fixed-coupon callable-bond comparisons.
+    selected_components:
+      discount_curve: usd_callable_flat_5pct
+      vol_surface: callable_short_rate_vol_proof
+    constructor:
+      kind: flat_rates
+      valuation_date: "2025-01-15"
+      domestic_rate: 0.05
+      black_vol: 0.20
+      model_parameter_sets:
+        callable_fixed_5pct_proof:bdt:
+          parameter_set_name: callable_fixed_5pct_proof:bdt
+          model_family: bdt
+          mean_reversion: 0.05
+          sigma: 0.20
+          sigma_unit: relative_rate
+          source_kind: explicit_proof_fixture
+        callable_fixed_5pct_proof:hull_white:
+          parameter_set_name: callable_fixed_5pct_proof:hull_white
+          model_family: hull_white
+          mean_reversion: 0.10
+          sigma: 0.01
+          sigma_unit: absolute_decimal_rate
+          source_kind: explicit_proof_fixture
+
   usd_credit_ig:
     source: mock
     as_of: "2024-11-15"
