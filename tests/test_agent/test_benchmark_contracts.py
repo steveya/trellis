@@ -498,6 +498,24 @@ def test_generic_callable_bond_rendering_does_not_claim_the_usd_proof_fixture():
     assert "USD fixed-coupon callable bond proof" not in description
 
 
+@pytest.mark.parametrize(
+    "call_dates",
+    (
+        ("2028-01-15", "not-a-date", "2032-01-15"),
+        ("2028-01-15", "2028-01-15", "2032-01-15"),
+    ),
+)
+def test_callable_bond_overrides_reject_malformed_or_duplicate_call_dates(
+    call_dates,
+):
+    task = deepcopy(_legacy_tasks()["T02"])
+    task.pop("proof_fixture_id", None)
+    task["benchmark_contract"]["call_dates"] = call_dates
+
+    with pytest.raises(ValueError, match="strictly increasing ISO-date sequence"):
+        benchmark_spec_overrides(task, root=ROOT)
+
+
 @pytest.mark.parametrize("task_id", ("T02", "T17"))
 def test_callable_proof_fixture_rendering_and_overrides_ignore_title(task_id):
     task = _legacy_tasks()[task_id]

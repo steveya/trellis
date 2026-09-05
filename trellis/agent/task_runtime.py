@@ -5289,7 +5289,10 @@ def _cross_validate_comparison_task(
                 output_status = "failed"
             elif target_id in report["passed_targets"]:
                 output_status = "passed"
-            elif target_id == report["reference_target"]:
+            elif (
+                target_id == report["reference_target"]
+                and target_id in report["values"]
+            ):
                 output_status = "reference"
             else:
                 output_status = "not_evaluated"

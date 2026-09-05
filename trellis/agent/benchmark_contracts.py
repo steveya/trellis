@@ -1398,7 +1398,8 @@ def _callable_bond_overrides(contract: Mapping[str, Any]) -> dict[str, Any]:
     call_price = _float_or_none(contract.get("call_price"))
     start_date = _parse_date(contract.get("start_date"))
     end_date = _parse_date(contract.get("end_date"))
-    call_dates = _parse_date_sequence(contract.get("call_dates"))
+    raw_call_dates = contract.get("call_dates")
+    call_dates = _parse_date_sequence(raw_call_dates)
     frequency = _frequency(contract.get("frequency"))
     day_count = _day_count(contract.get("day_count"))
     if notional is None or not math.isfinite(notional) or notional <= 0.0:
@@ -1409,8 +1410,16 @@ def _callable_bond_overrides(contract: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("callable_bond call_price must be a positive finite number")
     if start_date is None or end_date is None or start_date >= end_date:
         raise ValueError("callable_bond requires ordered ISO start_date and end_date")
-    if not call_dates or tuple(sorted(call_dates)) != call_dates:
-        raise ValueError("callable_bond call_dates must be a non-empty ordered ISO-date sequence")
+    if (
+        not isinstance(raw_call_dates, (list, tuple))
+        or not call_dates
+        or len(call_dates) != len(raw_call_dates)
+        or tuple(sorted(set(call_dates))) != call_dates
+    ):
+        raise ValueError(
+            "callable_bond call_dates must be a non-empty strictly increasing "
+            "ISO-date sequence"
+        )
     if any(call_date <= start_date or call_date >= end_date for call_date in call_dates):
         raise ValueError("callable_bond call_dates must lie strictly inside the bond term")
     if frequency is None:

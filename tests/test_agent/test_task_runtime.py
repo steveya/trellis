@@ -3618,6 +3618,37 @@ def test_cross_validate_comparison_task_validates_configured_native_outputs():
         "insufficient_results"
     )
 
+    explicit_reference_targets = [
+        ComparisonBuildTarget(
+            contract=legacy_contract("copula", "analytical"),
+            is_reference=True,
+        ),
+        ComparisonBuildTarget(
+            contract=legacy_contract("sampled", "monte_carlo")
+        ),
+    ]
+    failed_reference = _cross_validate_comparison_task(
+        explicit_reference_targets,
+        {
+            **live_results,
+            "copula": SimpleNamespace(success=False, payoff_cls=None),
+        },
+        market_state=object(),
+        configured_targets={
+            "tolerance_pct": 3.0,
+            "output_tolerances_pct": {"spread_cs01": 1.0},
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+    )
+
+    assert failed_reference["status"] == "insufficient_results"
+    assert failed_reference["target_acceptance"]["copula"][
+        "output_acceptance"
+    ]["spread_cs01"]["status"] == "not_evaluated"
+    assert failed_reference["target_acceptance"]["sampled"][
+        "output_acceptance"
+    ]["spread_cs01"]["status"] == "insufficient_results"
+
 
 def test_task_comparison_targets_promote_t51_cds_targets_to_analytical_lane():
     from trellis.agent.task_runtime import _task_comparison_targets, _task_construct_methods
