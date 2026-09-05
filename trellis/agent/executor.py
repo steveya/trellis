@@ -5302,15 +5302,24 @@ def _terminal_basket_primitive_body(
                     option_type=resolved.option_type,
                 )
 
+            n_steps_value = getattr(spec, "n_steps", 1)
+            n_steps = 1 if n_steps_value is None else int(n_steps_value)
+            if n_steps < 1:
+                raise ValueError("n_steps must be at least 1")
+            mc_method = str(
+                getattr(spec, "mc_method", None) or "exact"
+            ).strip().lower()
+            if mc_method not in {"exact", "euler"}:
+                raise ValueError("mc_method must be one of: exact, euler")
             engine = MonteCarloEngine(
                 process,
                 n_paths=max(
                     int(getattr(spec, "n_paths", 40000) or 40000),
                     8192,
                 ),
-                n_steps=max(int(getattr(spec, "n_steps", 1) or 1), 1),
+                n_steps=n_steps,
                 seed=int(getattr(spec, "seed", 42) or 42),
-                method=str(getattr(spec, "mc_method", None) or "exact"),
+                method=mc_method,
             )
             result = engine.price(
                 get_numpy().asarray(

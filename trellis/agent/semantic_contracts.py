@@ -1658,6 +1658,15 @@ def make_terminal_basket_option_contract(
         raise ValueError("Terminal basket market vectors must align to two constituents.")
     if len(correlation_values) != 2 or any(len(row) != 2 for row in correlation_values):
         raise ValueError("Terminal basket correlation must be a 2x2 matrix.")
+    n_paths_value = int(n_paths)
+    n_steps_value = int(n_steps)
+    if n_paths_value < 1:
+        raise ValueError("n_paths must be at least 1")
+    if n_steps_value < 1:
+        raise ValueError("n_steps must be at least 1")
+    mc_method_value = str(mc_method).strip().lower()
+    if mc_method_value not in {"exact", "euler"}:
+        raise ValueError("mc_method must be one of: exact, euler")
 
     definition, surface, normalized_method = _resolve_registered_family_surface(
         "terminal_basket_option",
@@ -1760,10 +1769,10 @@ def make_terminal_basket_option_contract(
                 "strike": float(strike),
                 "correlation": correlation_values,
                 "day_count": str(day_count),
-                "n_paths": int(n_paths),
-                "n_steps": int(n_steps),
+                "n_paths": n_paths_value,
+                "n_steps": n_steps_value,
                 "seed": int(seed),
-                "mc_method": str(mc_method),
+                "mc_method": mc_method_value,
             }
         ),
         exercise_style="european",

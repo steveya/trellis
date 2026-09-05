@@ -131,8 +131,6 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         concept_role="product_contract",
         aliases=(
             "terminal_basket_option",
-            "rainbow_option",
-            "best_of_option",
         ),
         compatibility_wrappers=(),
         required_contract_fields=(
@@ -184,8 +182,8 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         ),
         cue_phrases=(
             "terminal basket",
-            "rainbow option",
-            "best-of call",
+            "terminal best-of",
+            "european best-of",
         ),
     ),
     _concept(

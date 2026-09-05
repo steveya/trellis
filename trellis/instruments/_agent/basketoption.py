@@ -79,6 +79,9 @@ class BasketOptionPayoff:
         if requires_path_runtime:
             if int(spec.n_steps) < 1:
                 raise ValueError("n_steps must be at least 1")
+            mc_method = str(spec.mc_method).strip().lower()
+            if mc_method not in {"exact", "euler"}:
+                raise ValueError("mc_method must be one of: exact, euler")
             if semantics.T <= 0.0:
                 intrinsic = terminal_basket_option_payoff(
                     np.asarray([semantics.constituent_spots], dtype=float),
@@ -110,7 +113,7 @@ class BasketOptionPayoff:
                 n_paths=max(int(spec.n_paths), 8192),
                 n_steps=int(spec.n_steps),
                 seed=int(spec.seed),
-                method=str(spec.mc_method),
+                method=mc_method,
             ).price(
                 np.asarray(semantics.constituent_spots, dtype=float),
                 float(semantics.T),
