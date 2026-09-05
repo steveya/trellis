@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 from pathlib import Path
 
@@ -369,6 +370,82 @@ def test_extension_rainbow_overrides_bind_underliers_from_market_scenario():
     assert rainbow["spots"] == "100.0,95.0"
     assert rainbow["vols"] == "0.2,0.25"
     assert rainbow["risk_free_rate"] == pytest.approx(0.05)
+
+
+def test_t102_terminal_basket_contract_renders_and_overrides_without_hidden_defaults():
+    task = _legacy_tasks()["T102"]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert description is not None
+    assert "Build a pricer for: Two-asset European terminal best-of call" in description
+    assert "Underliers: SPX, NDX." in description
+    assert "Spots: 100.0, 95.0." in description
+    assert "Volatilities: 0.2, 0.2." in description
+    assert "Dividend yields: 0.0, 0.0." in description
+    assert "Correlation: 1.0,0.35;0.35,1.0." in description
+    assert "Expiry date: 2025-11-15." in description
+    assert "Day count: ACT/365." in description
+    assert "Monte Carlo controls: n_paths=40000, n_steps=1, seed=42, method=exact." in description
+    assert overrides == {
+        "notional": pytest.approx(10.0),
+        "strike": pytest.approx(100.0),
+        "option_type": "call",
+        "payoff": "best_of_call",
+        "style": "european",
+        "underliers": "SPX,NDX",
+        "constituents": "SPX,NDX",
+        "spots": "100.0,95.0",
+        "vols": "0.2,0.2",
+        "dividend_yields": "0.0,0.0",
+        "correlation": "1.0,0.35;0.35,1.0",
+        "expiry_date": date(2025, 11, 15),
+        "basket_style": "best_of",
+        "risk_free_rate": pytest.approx(0.05),
+        "n_paths": 40_000,
+        "n_steps": 1,
+        "seed": 42,
+        "day_count": DayCountConvention.ACT_365,
+        "mc_method": "exact",
+    }
+
+
+def test_t102_terminal_basket_rendering_and_overrides_ignore_title():
+    task = _legacy_tasks()["T102"]
+    renamed = deepcopy(task)
+    renamed["title"] = "An unrelated display label that carries no economics"
+
+    assert benchmark_request_description(renamed, root=ROOT) == benchmark_request_description(
+        task,
+        root=ROOT,
+    )
+    assert benchmark_spec_overrides(renamed, root=ROOT) == benchmark_spec_overrides(
+        task,
+        root=ROOT,
+    )
+
+
+def test_t102_terminal_basket_harness_reports_authored_acceptance_and_mc_controls():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(_legacy_tasks()["T102"])
+    targets = {target.target_id: target for target in plan.targets}
+
+    assert plan.reference_target == "stulz_rainbow"
+    assert plan.tolerance_pct == pytest.approx(2.0)
+    assert targets["stulz_rainbow"].is_reference is True
+    assert targets["mc_rainbow"].relation == "within_tolerance"
+    assert targets["mc_rainbow"].contract.spec_overrides == {
+        "n_paths": 40_000,
+        "n_steps": 1,
+        "seed": 42,
+        "mc_method": "exact",
+    }
+    assert _legacy_tasks()["T102"]["financepy_binding_id"] == (
+        "financepy.equity.rainbow.stulz"
+    )
+    assert _legacy_tasks()["T102"]["benchmark_contract"]["num_assets"] == 2
 
 
 def test_weighted_nth_to_default_overrides_preserve_name_exposure_and_spread():

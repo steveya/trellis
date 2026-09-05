@@ -43,7 +43,9 @@ class BasketOptionSpec:
     barrier_level: float | None = None
     barrier_direction: str | None = None
     n_paths: int = 40_000
+    n_steps: int = 1
     seed: int = 42
+    mc_method: str = "exact"
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
@@ -75,6 +77,11 @@ class BasketOptionPayoff:
             )
         )
         if requires_path_runtime:
+            if int(spec.n_steps) < 1:
+                raise ValueError("n_steps must be at least 1")
+            mc_method = str(spec.mc_method).strip().lower()
+            if mc_method not in {"exact", "euler"}:
+                raise ValueError("mc_method must be one of: exact, euler")
             if semantics.T <= 0.0:
                 intrinsic = terminal_basket_option_payoff(
                     np.asarray([semantics.constituent_spots], dtype=float),
@@ -104,9 +111,9 @@ class BasketOptionPayoff:
             result = MonteCarloEngine(
                 process,
                 n_paths=max(int(spec.n_paths), 8192),
-                n_steps=1,
+                n_steps=int(spec.n_steps),
                 seed=int(spec.seed),
-                method="exact",
+                method=mc_method,
             ).price(
                 np.asarray(semantics.constituent_spots, dtype=float),
                 float(semantics.T),

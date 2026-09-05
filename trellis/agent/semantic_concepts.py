@@ -121,6 +121,72 @@ def _concept(
 
 SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
     _concept(
+        semantic_id="terminal_basket_option",
+        semantic_version="c2.0",
+        scope="bounded European two-asset terminal best-of call contracts",
+        description=(
+            "Two-asset option whose best-of call payoff is determined from one "
+            "terminal spot vector under the bounded T102 contract."
+        ),
+        concept_role="product_contract",
+        aliases=(
+            "terminal_basket_option",
+        ),
+        compatibility_wrappers=(),
+        required_contract_fields=(
+            "underlier_structure",
+            "payoff_rule",
+            "settlement_rule",
+            "observation_schedule",
+            "constituents",
+        ),
+        allowed_contract_fields=(
+            "instrument_class",
+            "underlier_structure",
+            "payoff_family",
+            "payoff_rule",
+            "settlement_rule",
+            "payoff_traits",
+            "exercise_style",
+            "path_dependence",
+            "schedule_dependence",
+            "state_dependence",
+            "model_family",
+            "multi_asset",
+            "observation_schedule",
+            "observation_basis",
+            "selection_operator",
+            "selection_scope",
+            "selection_count",
+            "aggregation_rule",
+            "maturity_settlement_rule",
+            "constituents",
+            "state_variables",
+            "event_transitions",
+        ),
+        required_primitives=(
+            "two_asset_extremum_option_stulz",
+            "terminal_basket_option_payoff",
+        ),
+        route_helpers=(),
+        required_market_inputs=(
+            "discount_curve",
+            "underlier_spots",
+            "black_vol_surfaces",
+            "dividend_yields",
+            "correlation_matrix",
+        ),
+        route_family="analytical_or_monte_carlo",
+        example_requests=(
+            "European terminal best-of call on SPX and NDX",
+        ),
+        cue_phrases=(
+            "terminal basket",
+            "terminal best-of",
+            "european best-of",
+        ),
+    ),
+    _concept(
         semantic_id="ranked_observation_basket",
         semantic_version="c2.0",
         scope="ranked-observation basket contracts and their compatibility aliases",

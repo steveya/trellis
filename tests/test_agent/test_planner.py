@@ -200,6 +200,9 @@ class TestPlanStatic:
         )
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "BasketOptionPayoff"
+        assert {"n_paths", "n_steps", "seed", "mc_method", "day_count"} <= {
+            field.name for field in plan.spec_schema.fields
+        }
 
     def test_fx_vanilla_description_gets_specialized_spec(self):
         plan = _plan_static(

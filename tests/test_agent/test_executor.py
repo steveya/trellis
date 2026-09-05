@@ -7523,6 +7523,14 @@ def test_deterministic_exact_binding_module_composes_terminal_basket_primitives(
     elif method == "monte_carlo":
         assert "two_asset_extremum_option_stulz" not in generated.code
         assert "hurd_zhou_spread_option_2d_fft" not in generated.code
+        assert 'mc_method = str(' in generated.code
+        assert 'getattr(spec, "mc_method", None) or "exact"' in generated.code
+        assert ").strip().lower()" in generated.code
+        assert 'if mc_method not in {"exact", "euler"}:' in generated.code
+        assert 'n_steps_value = getattr(spec, "n_steps", 1)' in generated.code
+        assert "n_steps = 1 if n_steps_value is None else int(n_steps_value)" in generated.code
+        assert 'if n_steps < 1:' in generated.code
+        assert "method=mc_method" in generated.code
     else:
         assert "MonteCarloEngine" not in generated.code
         assert "two_asset_extremum_option_stulz" not in generated.code

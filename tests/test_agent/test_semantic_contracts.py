@@ -1265,6 +1265,86 @@ def test_semantic_concept_resolution_maps_cap_wrapper_to_rate_option_strip():
     assert resolution.matched_wrapper == "cap"
 
 
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Price a Bermudan best-of-two rainbow call with three exercise dates.",
+        "Price an Asian rainbow call on the average of scheduled best-performer observations.",
+    ],
+)
+def test_path_dependent_rainbow_requests_do_not_resolve_as_terminal_basket(description):
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        description,
+        instrument_type="rainbow_option",
+    )
+
+    assert resolution.concept_id != "terminal_basket_option"
+    assert "terminal_basket_option" not in resolution.candidate_concepts
+
+
+def test_terminal_european_rainbow_request_resolves_as_terminal_basket():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "Price a European two-asset terminal best-of call on SPX and NDX.",
+        instrument_type="terminal_basket_option",
+    )
+
+    assert resolution.concept_id == "terminal_basket_option"
+    assert resolution.resolution_kind == "reuse_existing_concept"
+
+
+def _terminal_basket_contract_kwargs(**overrides):
+    values = {
+        "description": "European terminal best-of call on SPX and NDX",
+        "constituents": ("SPX", "NDX"),
+        "expiry_date": "2025-11-15",
+        "notional": 10.0,
+        "spots": (100.0, 95.0),
+        "volatilities": (0.20, 0.20),
+        "dividend_yields": (0.0, 0.0),
+        "strike": 100.0,
+        "correlation": ((1.0, 0.35), (0.35, 1.0)),
+        "day_count": "ACT/365",
+        "n_paths": 40_000,
+        "n_steps": 1,
+        "seed": 42,
+        "mc_method": "exact",
+        "contract_profile": "t102_two_asset_terminal_best_of_v1",
+    }
+    values.update(overrides)
+    return values
+
+
+def test_terminal_basket_contract_normalizes_monte_carlo_method():
+    from trellis.agent.semantic_contracts import make_terminal_basket_option_contract
+
+    contract = make_terminal_basket_option_contract(
+        **_terminal_basket_contract_kwargs(mc_method=" Exact ")
+    )
+
+    assert contract.product.term_fields["mc_method"] == "exact"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"n_paths": 0}, "n_paths must be at least 1"),
+        ({"n_steps": 0}, "n_steps must be at least 1"),
+        ({"mc_method": "typo"}, "mc_method must be one of"),
+    ],
+)
+def test_terminal_basket_contract_rejects_invalid_monte_carlo_controls(overrides, message):
+    from trellis.agent.semantic_contracts import make_terminal_basket_option_contract
+
+    with pytest.raises(ValueError, match=message):
+        make_terminal_basket_option_contract(
+            **_terminal_basket_contract_kwargs(**overrides)
+        )
+
+
 def test_semantic_concept_resolution_recognizes_bounded_fixed_lookback_option():
     from trellis.agent.semantic_concepts import resolve_semantic_concept
 

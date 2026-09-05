@@ -129,7 +129,7 @@ remain outside executable pricing selection.
 | `T99` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Chooser option: Rubinstein formula vs MC |
 | `T100` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Compound option: Geske formula vs MC |
 | `T101` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Cliquet option: forward-start decomposition vs MC |
-| `T102` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Rainbow option (best-of-two): Stulz formula vs MC |
+| `T102` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored SPX/NDX European terminal best-of call; raw Stulz reference, exact seeded correlated-GBM Monte Carlo, explicit 2% tolerance |
 | `T103` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Double barrier option: Ikeda-Kunitomo vs PDE vs MC |
 | `T104` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Variance swap: log-contract replication vs MC realized var |
 | `T105` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Quanto option: quanto-adjusted BS vs MC cross-currency |

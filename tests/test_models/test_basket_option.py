@@ -230,3 +230,82 @@ def test_agent_basket_option_wrapper_uses_typed_best_of_helper_path():
     price = BasketOptionPayoff(spec).evaluate(_market_state())
 
     assert price > 0.0
+
+
+def test_agent_basket_option_wrapper_rejects_nonpositive_monte_carlo_steps():
+    from trellis.instruments._agent.basketoption import BasketOptionPayoff, BasketOptionSpec
+
+    spec = BasketOptionSpec(
+        notional=100.0,
+        underliers="SPX,NDX",
+        spots="100.0,95.0",
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        correlation="1.0,0.35;0.35,1.0",
+        basket_style="best_of",
+        option_type="call",
+        n_observations=1,
+        n_steps=0,
+    )
+
+    with pytest.raises(ValueError, match="n_steps must be at least 1"):
+        BasketOptionPayoff(spec).evaluate(_market_state())
+
+
+def test_agent_basket_option_wrapper_normalizes_supported_monte_carlo_method(monkeypatch):
+    from trellis.instruments._agent import basketoption
+
+    captured = {}
+
+    class StubMonteCarloEngine:
+        def __init__(self, _process, **kwargs):
+            captured.update(kwargs)
+
+        def price(self, *_args, **_kwargs):
+            return {"price": 1.0}
+
+    monkeypatch.setattr(basketoption, "MonteCarloEngine", StubMonteCarloEngine)
+    spec = basketoption.BasketOptionSpec(
+        notional=100.0,
+        underliers="SPX,NDX",
+        spots="100.0,95.0",
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        correlation="1.0,0.35;0.35,1.0",
+        basket_style="best_of",
+        option_type="call",
+        n_observations=1,
+        mc_method=" Exact ",
+    )
+
+    assert basketoption.BasketOptionPayoff(spec).evaluate(
+        _market_state()
+    ) == pytest.approx(100.0)
+    assert captured["method"] == "exact"
+
+
+def test_agent_basket_option_wrapper_rejects_unsupported_monte_carlo_method(monkeypatch):
+    from trellis.instruments._agent import basketoption
+
+    monkeypatch.setattr(
+        basketoption,
+        "MonteCarloEngine",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid method must fail before engine construction")
+        ),
+    )
+    spec = basketoption.BasketOptionSpec(
+        notional=100.0,
+        underliers="SPX,NDX",
+        spots="100.0,95.0",
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        correlation="1.0,0.35;0.35,1.0",
+        basket_style="best_of",
+        option_type="call",
+        n_observations=1,
+        mc_method="typo",
+    )
+
+    with pytest.raises(ValueError, match="mc_method must be one of"):
+        basketoption.BasketOptionPayoff(spec).evaluate(_market_state())

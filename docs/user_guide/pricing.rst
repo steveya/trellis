@@ -763,6 +763,14 @@ use them. Support is bounded to European two-asset lognormal claims; see
 ``L59`` in ``LIMITATIONS.md`` before assuming broader basket, path-dependent,
 or transform coverage.
 
+The legacy T102 proof is now a concrete example of that bounded support. It
+declares a one-year European best-of call on SPX and NDX, with its spots,
+volatilities, carries, correlation, discounting, payoff terms, and seeded
+Monte Carlo controls in the task manifest. Both the Stulz and Monte Carlo
+lanes consume the same declared contract, and the task carries its own 2%
+comparison tolerance. Trellis does not infer those terms from the task title;
+missing, extra, or changed fields are rejected before pricing.
+
 They also now carry compiler-emitted lane obligations. In practice that means
 the build loop sees the computational lane first (analytical, lattice, Monte
 Carlo, PDE, and so on), the timeline and market bindings that lane requires,

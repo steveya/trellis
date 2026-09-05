@@ -316,7 +316,7 @@ def _rainbow_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[
         for rate in contract["dividend_rates"]
     ]
     return {
-        "price": float(
+        "price": float(contract.get("notional", 1.0)) * float(
             option.value(
                 value_dt,
                 np.asarray(contract["spots"], dtype=float),

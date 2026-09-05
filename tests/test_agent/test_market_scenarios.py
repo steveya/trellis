@@ -262,6 +262,42 @@ def test_construct_market_state_for_scenario_populates_multi_asset_support():
     assert market_state.market_provenance["market_scenario"]["scenario_id"] == "equity_rainbow_two_asset"
 
 
+def test_t102_named_scenario_preserves_exact_spx_ndx_proof_coordinates():
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.agent.task_runtime import build_market_state
+
+    contract = load_market_scenario_contracts(root=ROOT)[
+        "equity_rainbow_spx_ndx_proof"
+    ]
+    market_state, metadata = construct_market_state_for_scenario(
+        contract,
+        build_market_state(),
+        task_id="T102",
+    )
+
+    assert metadata["scenario_construction_kind"] == "multi_asset_equity"
+    assert contract.domestic_rate == pytest.approx(0.05)
+    assert {
+        name: market_state.underlier_spots[name] for name in ("SPX", "NDX")
+    } == {"SPX": 100.0, "NDX": 95.0}
+    assert {
+        name: market_state.model_parameters["underlier_vols"][name]
+        for name in ("SPX", "NDX")
+    } == {"SPX": 0.2, "NDX": 0.2}
+    assert market_state.forecast_curves["SPX-DISC"].zero_rate(1.0) == 0.0
+    assert market_state.forecast_curves["NDX-DISC"].zero_rate(1.0) == 0.0
+    assert market_state.model_parameters["correlation_source"] == {
+        "kind": "explicit",
+        "matrix": [[1.0, 0.35], [0.35, 1.0]],
+    }
+    assert market_state.market_provenance["market_scenario"]["scenario_id"] == (
+        "equity_rainbow_spx_ndx_proof"
+    )
+
+
 def test_construct_hybrid_equity_fx_scenario_keeps_named_factors_distinct():
     from trellis.agent.market_scenarios import (
         construct_market_state_for_scenario,

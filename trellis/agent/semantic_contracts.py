@@ -140,6 +140,46 @@ def _build_semantic_family_registry() -> MappingProxyType:
     """Return the immutable semantic family and method-surface registry."""
     definitions = (
         _family_definition(
+            family_key="terminal_basket_option",
+            semantic_id="terminal_basket_option",
+            candidate_methods=("analytical", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=(
+                        "trellis.models.resolution.terminal_basket",
+                        "trellis.models.analytical.terminal_basket",
+                        "trellis.models.payoffs",
+                    ),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_two_asset_terminal_basket_inputs",
+                        "bind_stulz_extremum_kernel",
+                        "apply_notional_once",
+                    ),
+                    spec_schema_hints=("basket_option",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.resolution.terminal_basket",
+                        "trellis.models.processes.correlated_gbm",
+                        "trellis.models.monte_carlo.engine",
+                        "trellis.models.payoffs",
+                    ),
+                    primitive_families=("monte_carlo_paths",),
+                    adapter_obligations=(
+                        "resolve_two_asset_terminal_basket_inputs",
+                        "bind_exact_correlated_gbm_terminal_state",
+                        "bind_terminal_basket_payoff",
+                        "apply_notional_once",
+                    ),
+                    spec_schema_hints=("basket_option",),
+                ),
+            ),
+        ),
+        _family_definition(
             family_key="ranked_observation_basket",
             semantic_id="ranked_observation_basket",
             candidate_methods=("monte_carlo",),
@@ -1577,6 +1617,243 @@ def make_ranked_observation_basket_contract(
         methods=methods,
         validation=validation,
         blueprint=blueprint,
+        description=description,
+    )
+
+
+def make_terminal_basket_option_contract(
+    *,
+    description: str,
+    constituents: tuple[str, str] | list[str],
+    expiry_date: str,
+    notional: float,
+    spots: tuple[float, float] | list[float],
+    volatilities: tuple[float, float] | list[float],
+    dividend_yields: tuple[float, float] | list[float],
+    strike: float,
+    correlation: tuple[tuple[float, float], tuple[float, float]] | list[list[float]],
+    day_count: str,
+    n_paths: int,
+    n_steps: int,
+    seed: int,
+    mc_method: str,
+    contract_profile: str,
+    preferred_method: str = "analytical",
+) -> SemanticContract:
+    """Construct the bounded two-asset European terminal best-of contract."""
+    constituent_names = _tuple(constituents)
+    if len(constituent_names) != 2:
+        raise ValueError("Terminal basket option contract requires exactly two constituents.")
+    schedule = _normalize_schedule((expiry_date,))
+    if len(schedule) != 1:
+        raise ValueError("Terminal basket option contract requires one expiry date.")
+    spot_values = tuple(float(value) for value in spots)
+    vol_values = tuple(float(value) for value in volatilities)
+    dividend_values = tuple(float(value) for value in dividend_yields)
+    correlation_values = tuple(
+        tuple(float(value) for value in row)
+        for row in correlation
+    )
+    if not all(len(values) == 2 for values in (spot_values, vol_values, dividend_values)):
+        raise ValueError("Terminal basket market vectors must align to two constituents.")
+    if len(correlation_values) != 2 or any(len(row) != 2 for row in correlation_values):
+        raise ValueError("Terminal basket correlation must be a 2x2 matrix.")
+    n_paths_value = int(n_paths)
+    n_steps_value = int(n_steps)
+    if n_paths_value < 1:
+        raise ValueError("n_paths must be at least 1")
+    if n_steps_value < 1:
+        raise ValueError("n_steps must be at least 1")
+    mc_method_value = str(mc_method).strip().lower()
+    if mc_method_value not in {"exact", "euler"}:
+        raise ValueError("mc_method must be one of: exact, euler")
+
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "terminal_basket_option",
+        preferred_method=preferred_method,
+    )
+    product = SemanticProductSemantics(
+        semantic_id="terminal_basket_option",
+        semantic_version="c2.0",
+        instrument_class="basket_option",
+        instrument_aliases=("terminal_basket_option", "rainbow_option", "best_of_option"),
+        payoff_family="basket_option",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(
+            asset_class="equity",
+            identifiers=constituent_names,
+        ),
+        option_type="call",
+        conventions=ConventionEnv(
+            day_count_convention=str(day_count),
+            payment_currency="USD",
+            reporting_currency="USD",
+        ),
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+        ),
+        underlier_structure="two_asset_terminal_basket",
+        payoff_rule="best_of_call",
+        settlement_rule="cash_settle_at_expiry",
+        payoff_traits=(
+            "two_asset_terminal_basket",
+            "best_of",
+            "terminal_only",
+            "discounting",
+            "vol_surface_dependence",
+            "correlation_dependence",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="terminal_constituent_spots",
+                observable_type="spot_vector",
+                description="Two constituent spots observed once at expiry.",
+                source="underlier_spots",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="terminal_spot_vector",
+                kind="event_state",
+                description="Two-asset terminal state used by the best-of payoff.",
+                source_observables=("terminal_constituent_spots",),
+                tags=("terminal_markov",),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="expiry_cash_settlement",
+                settle_date_rule="cash_settle_at_expiry",
+                amount_expression="notional_times_best_of_call_payoff",
+                currency="USD",
+                settlement_kind="cash",
+                trigger="positive_terminal_intrinsic",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=(
+            ControllerProtocol(
+                controller_style="identity",
+                controller_role="none",
+                decision_phase="decision",
+                schedule_role="",
+                admissible_actions=(),
+                description="Automatic terminal payoff evaluation on the Monte Carlo lane.",
+            )
+            if normalized_method == "monte_carlo"
+            else ControllerProtocol(
+                controller_style="holder_max",
+                controller_role="holder",
+                decision_phase="decision",
+                schedule_role="decision_dates",
+                admissible_actions=("exercise", "continue"),
+                description="European exercise decision only at expiry.",
+            )
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        term_fields=MappingProxyType(
+            {
+                "contract_profile": str(contract_profile),
+                "notional": float(notional),
+                "spots": spot_values,
+                "volatilities": vol_values,
+                "dividend_yields": dividend_values,
+                "strike": float(strike),
+                "correlation": correlation_values,
+                "day_count": str(day_count),
+                "n_paths": n_paths_value,
+                "n_steps": n_steps_value,
+                "seed": int(seed),
+                "mc_method": mc_method_value,
+            }
+        ),
+        exercise_style="european",
+        path_dependence="terminal_markov",
+        schedule_dependence=False,
+        state_dependence="terminal_markov",
+        model_family="multi_asset_diffusion",
+        multi_asset=True,
+        observation_schedule=schedule,
+        observation_basis="terminal_spot_vector",
+        maturity_settlement_rule="cash_settle_at_expiry",
+        constituents=constituent_names,
+        state_variables=("terminal_spot_vector",),
+        event_transitions=("observe_terminal_spots", "evaluate_best_of_call", "settle_at_expiry"),
+        event_machine=_derive_event_machine(
+            ("observe_terminal_spots", "evaluate_best_of_call", "settle_at_expiry"),
+            state_dependence="terminal_markov",
+        ),
+    )
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="USD discount curve for terminal settlement.",
+            capability="discount_curve",
+            aliases=("discount", "domestic_rate"),
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="underlier_spots",
+            description="Ordered SPX and NDX spot vector.",
+            capability="spot",
+            aliases=("spots",),
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="black_vol_surfaces",
+            description="Ordered constituent volatility inputs.",
+            capability="black_vol_surface",
+            aliases=("volatilities", "vols"),
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="dividend_yields",
+            description="Ordered constituent continuous dividend yields.",
+            capability="forward_curve",
+            aliases=("carry", "dividend_rates"),
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="correlation_matrix",
+            description="Explicit symmetric 2x2 terminal diffusion correlation.",
+            capability="model_parameters",
+            aliases=("correlation", "corr"),
+            allowed_provenance=("observed",),
+        ),
+    )
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        provenance_requirements=("named_market_scenario_required",),
+        missing_data_error_policy=("fail_fast_on_missing_terminal_basket_input",),
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
+        bundle_hints=("terminal_basket_option_contract",),
+        universal_checks=(
+            "exactly_two_constituents",
+            "one_terminal_observation",
+            "european_exercise_only",
+        ),
+        semantic_checks=(
+            "best_of_call_payoff",
+            "shared_market_coordinates_across_methods",
+            "notional_applied_once",
+        ),
+        comparison_targets=("analytical", "monte_carlo"),
+        reduction_cases=("two_asset_european_terminal_best_of_call",),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
+        proving_tasks=("validate_t102_terminal_basket_contract",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -4997,6 +5274,33 @@ def _rebuild_ranked_observation_basket_contract(
     )
 
 
+def _rebuild_terminal_basket_option_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a bounded terminal-basket contract for one method surface."""
+    product = contract.product
+    terms = dict(getattr(product, "term_fields", {}) or {})
+    return make_terminal_basket_option_contract(
+        description=contract.description,
+        constituents=tuple(getattr(product, "constituents", ()) or ()),
+        expiry_date=tuple(getattr(product, "observation_schedule", ()) or ())[0],
+        notional=float(terms["notional"]),
+        spots=tuple(terms["spots"]),
+        volatilities=tuple(terms["volatilities"]),
+        dividend_yields=tuple(terms["dividend_yields"]),
+        strike=float(terms["strike"]),
+        correlation=tuple(tuple(row) for row in terms["correlation"]),
+        day_count=str(terms["day_count"]),
+        n_paths=int(terms["n_paths"]),
+        n_steps=int(terms["n_steps"]),
+        seed=int(terms["seed"]),
+        mc_method=str(terms["mc_method"]),
+        contract_profile=str(terms["contract_profile"]),
+        preferred_method=normalized_method,
+    )
+
+
 def _rebuild_vanilla_option_contract(
     contract: SemanticContract,
     normalized_method: str,
@@ -5265,6 +5569,7 @@ def _rebuild_credit_basket_tranche_contract(
 
 _SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], SemanticContract]] = MappingProxyType(
     {
+        "terminal_basket_option": _rebuild_terminal_basket_option_contract,
         "ranked_observation_basket": _rebuild_ranked_observation_basket_contract,
         "vanilla_option": _rebuild_vanilla_option_contract,
         "lookback_option": _rebuild_lookback_option_contract,

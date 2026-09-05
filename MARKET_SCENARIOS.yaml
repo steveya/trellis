@@ -204,6 +204,39 @@ scenarios:
           - [1.0, 0.35]
           - [0.35, 1.0]
 
+  equity_rainbow_spx_ndx_proof:
+    source: mock
+    as_of: "2024-11-15"
+    description: Bounded two-underlier SPX/NDX proof scenario for the European terminal best-of comparison.
+    selected_components:
+      discount_curve: usd_ois
+      vol_surface: spx_heston_implied_vol
+    constructor:
+      kind: multi_asset_equity
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.05
+      black_vol: 0.2
+      underliers:
+        - name: SPX
+          spot: 100.0
+          volatility: 0.2
+          carry:
+            kind: dividend_yield
+            rate: 0.0
+            curve_name: SPX-DISC
+        - name: NDX
+          spot: 95.0
+          volatility: 0.2
+          carry:
+            kind: dividend_yield
+            rate: 0.0
+            curve_name: NDX-DISC
+      correlation_source:
+        kind: explicit
+        matrix:
+          - [1.0, 0.35]
+          - [0.35, 1.0]
+
   fx_barrier_smile:
     source: mock
     as_of: "2024-11-15"

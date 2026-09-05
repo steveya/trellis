@@ -52,6 +52,16 @@ def _legacy_lookback_task(task_id: str = "T30"):
     )
 
 
+def _legacy_terminal_basket_task():
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T102"
+    )
+
+
 def _extension_task(task_id: str):
     root = Path(__file__).resolve().parents[2]
     payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
@@ -1162,6 +1172,98 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
     assert_executable_task_selection([_legacy_lookback_task(task_id)])
+
+
+def test_authored_legacy_terminal_basket_comparison_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_legacy_terminal_basket_task()])
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task["benchmark_contract"].__setitem__("volatilities", [0.2, 0.25]),
+        lambda task: task["benchmark_contract"].__setitem__("underliers", ["SPX", "NDX", "DJI"]),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "correlation",
+            [[1.0, 0.35, 0.0], [0.35, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        ),
+        lambda task: task["benchmark_contract"].__setitem__("observation_dates", ["2025-06-15"]),
+        lambda task: task["benchmark_contract"].__setitem__("exercise_style", "bermudan"),
+        lambda task: task["benchmark_contract"].__setitem__("n_paths", 20_000),
+        lambda task: task["benchmark_contract"].__setitem__("n_paths", True),
+        lambda task: task["benchmark_contract"].__setitem__("undocumented_default", True),
+        lambda task: task["cross_validate"].__setitem__("reference_target", "mc_rainbow"),
+        lambda task: task["cross_validate"].__setitem__("tolerance_pct", 5.0),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "stulz_rainbow"
+        ].__setitem__("backend_binding_id", "trellis.models.basket_option.price_basket_option_analytical"),
+        lambda task: task.__setitem__("market_scenario_id", "equity_rainbow_two_asset"),
+    ),
+)
+def test_legacy_terminal_basket_comparison_rejects_contract_drift(mutation):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_legacy_terminal_basket_task())
+    mutation(task)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.terminal_basket_invalid_contract" in _codes(exc_info.value.report)
+
+
+def test_t102_terminal_basket_proof_cannot_be_reclassified_as_a_hold():
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_legacy_terminal_basket_task())
+    task["task_disposition"] = "deferred_hold"
+    task["disposition_reason"] = "Attempt to bypass the authored pricing proof."
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.terminal_basket_invalid_contract" in _codes(exc_info.value.report)
+
+
+def test_t102_terminal_basket_validation_uses_the_callers_repository_root(tmp_path):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    repository_root = Path(__file__).resolve().parents[2]
+    scenarios = yaml.safe_load(
+        (repository_root / "MARKET_SCENARIOS.yaml").read_text(encoding="utf-8")
+    )
+    scenarios["scenarios"]["equity_rainbow_spx_ndx_proof"]["description"] = (
+        "Custom-root T102 terminal basket proof scenario."
+    )
+    legacy = yaml.safe_load(
+        (repository_root / "TASKS_PROOF_LEGACY.yaml").read_text(encoding="utf-8")
+    )
+    task = next(item for item in legacy["tasks"] if item["id"] == "T102")
+    _write_yaml(tmp_path, "MARKET_SCENARIOS.yaml", scenarios)
+    _write_yaml(tmp_path, "TASKS_PROOF_LEGACY.yaml", [task])
+
+    materialized = load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=tmp_path)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection(materialized)
+    assert "legacy.terminal_basket_invalid_contract" in _codes(exc_info.value.report)
+    assert_executable_task_selection(materialized, root=tmp_path)
 
 
 def test_legacy_lookback_validation_uses_the_callers_repository_root(tmp_path):
