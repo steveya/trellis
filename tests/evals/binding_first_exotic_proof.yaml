@@ -40,9 +40,9 @@ E22:
     - forward_curve
     - black_vol_surface
   comparison_targets:
-    - mc_rate_cap
-    - black76_cap
-  reference_target: black76_cap
+    - analytical
+    - monte_carlo
+  reference_target: analytical
   requires_binding_ids: true
   forbidden_failure_patterns:
     - MissingCapabilityError

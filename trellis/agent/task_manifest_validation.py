@@ -1562,6 +1562,13 @@ def _validate_legacy_task(
             )
         )
 
+    if task_id == "E22":
+        issues.extend(
+            _validate_legacy_cap_strip_comparison_contract(
+                manifest_name, task, path, root=root,
+            )
+        )
+
     if task_id in {"T02", "T17"}:
         issues.extend(
             _validate_legacy_callable_bond_comparison_contract(
@@ -1643,6 +1650,134 @@ def _validate_legacy_task(
             )
         )
     return issues
+
+
+def _validate_legacy_cap_strip_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+    *,
+    root: Path | None = None,
+) -> list[TaskManifestIssue]:
+    """Admit only the authored unadjusted Black-forward E22 proof."""
+    from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+    boundaries = [
+        date(2025 + (1 + 3 * i) // 12, (1 + 3 * i) % 12 + 1, 15).isoformat()
+        for i in range(21)
+    ]
+    expected_contract = {
+        "product": "period_rate_option_strip", "cap_floor": "cap",
+        "currency": "USD", "notional": 1000000.0, "strike": 0.04,
+        "valuation_date": "2024-11-15",
+        "start_date": "2025-02-15", "end_date": "2030-02-15",
+        "payment_frequency": "quarterly", "day_count": "ACT/360",
+        "model_time_day_count": "ACT/365", "calendar_name": "weekend_only",
+        "discount_curve_day_count": "ACT/ACT ISDA",
+        "forecast_curve_day_count": "ACT/ACT ISDA",
+        "business_day_adjustment": "unadjusted",
+        "fixing_rule": "accrual_start", "payment_rule": "accrual_end",
+        "fixing_lag_days": 0, "payment_lag_days": 0,
+        "accrual_dates": boundaries, "fixing_dates": boundaries[:-1],
+        "payment_dates": boundaries[1:], "rate_index": "USD-SOFR-3M",
+        "model": "black",
+        "mc_distribution": "independent_lognormal_forward_marginals",
+        "sampling": "antithetic", "n_paths": 100000, "seed": 42,
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount", "output_currency": "USD",
+    }
+    axes = {
+        "payoff_family": "period_rate_option_strip", "exercise_style": "none",
+        "model_family": "interest_rate", "observation_style": "fixed_schedule",
+    }
+    expected_comparison = {
+        "internal": ["analytical", "monte_carlo"], "reference_target": "analytical",
+        "relations": {"monte_carlo": "within_tolerance"}, "tolerance_pct": 0.5,
+        "tolerance_unit": "percent_of_reference_price",
+        "output_unit": "currency_amount", "output_currency": "USD",
+        "target_contracts": {
+            "analytical": {
+                "method": "analytical", **axes, "variant_parameters": {"model": "black"},
+                "route_family": "analytical",
+                "backend_binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+                "validation_bundle_id": "analytical:cap",
+            },
+            "monte_carlo": {
+                "method": "monte_carlo", **axes,
+                "route_family": "monte_carlo",
+                "backend_binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo",
+                "validation_bundle_id": "monte_carlo:cap",
+                "variant_parameters": {
+                    "distribution": "independent_lognormal_forward_marginals",
+                    "sampling": "antithetic",
+                },
+                "spec_overrides": {"n_paths": 100000, "seed": 42},
+            },
+        },
+    }
+    selected = {
+        "discount_curve": "usd_ois", "forecast_curve": "USD-SOFR-3M",
+        "vol_surface": "usd_rates_smile",
+    }
+    scenario_valid = canonical_market_matches = False
+    try:
+        scenarios = load_market_scenario_contracts(**({"root": root} if root else {}))
+        scenario = scenarios.get("usd_rates_smile")
+        scenario_valid = bool(
+            scenario is not None and scenario.source == "mock"
+            and scenario.as_of.isoformat() == "2024-11-15"
+            and scenario.valuation_date == date(2024, 11, 15)
+            and scenario.constructor_kind == "flat_rates"
+            and scenario.domestic_rate == 0.04 and scenario.forecast_rate == 0.0425
+            and scenario.forecast_curve_name == "USD-SOFR-3M"
+            and scenario.black_vol == 0.2
+            and dict(scenario.selected_components) == selected
+        )
+        market = task.get("market")
+        canonical_market_matches = market is None
+        if scenario is not None and isinstance(market, Mapping):
+            expected_market = {
+                "source": scenario.source, "as_of": scenario.as_of.isoformat(),
+                **dict(scenario.selected_components),
+                "scenario_contract": scenario.to_payload(),
+                "scenario_digest": scenario.scenario_digest,
+                "scenario_schema_version": scenario.schema_version,
+                "scenario_constructor_kind": scenario.constructor_kind,
+                "benchmark_inputs": scenario.financepy_inputs(),
+            }
+            canonical_market_matches = _manifest_value_matches(market, expected_market)
+    except (OSError, ValueError, yaml.YAMLError):
+        pass
+    expected_description = (
+        "Price the authored USD cap strip under the named rates scenario. Compare "
+        "discounted Black-76 caplets with seeded antithetic Monte Carlo of independent "
+        "lognormal caplet forward marginals, reporting holder present value in USD."
+    )
+    valid = all((
+        task.get("task_disposition") == "executable_pricing",
+        task.get("instrument_type") == "period_rate_option_strip",
+        task.get("market_scenario_id") == "usd_rates_smile",
+        task.get("validation_policy") == "invariants_and_cross_method",
+        task.get("description") == expected_description,
+        _manifest_value_matches(task.get("construct"), ["analytical", "monte_carlo"]),
+        _manifest_value_matches(task.get("benchmark_contract"), expected_contract),
+        _manifest_value_matches(task.get("cross_validate"), expected_comparison),
+        _manifest_value_matches(task.get("market_assertions"), {
+            "requires": ["discount_curve", "forward_curve", "black_vol_surface"],
+            "selected": selected,
+        }),
+        scenario_valid, canonical_market_matches,
+        not any(k in task for k in (
+            "comparison_regime", "financepy_binding_id", "proof_fixture_id",
+            "expected_outcome", "expected_blocker_ids", "honest_block_contract",
+            "seed", "simulation_seed",
+        )),
+    ))
+    return [] if valid else [_issue(
+        manifest_name, "legacy.cap_strip_invalid_contract",
+        "E22 requires the exact authored Black caplet and sampled-forward proof contract",
+        task_id=_text(task.get("id")), path=path,
+    )]
 
 
 def _validate_legacy_callable_bond_comparison_contract(

@@ -628,6 +628,34 @@ def _hydrate_spec_schema_defaults_from_semantics(
         rate_index = term_fields.get("rate_index")
         if rate_index not in {None, ""}:
             overrides["rate_index"] = str(rate_index).strip()
+    elif spec_name == "PeriodRateOptionStripSpec":
+        def _date_default(value: object) -> str:
+            parsed = value if isinstance(value, date) else date.fromisoformat(str(value))
+            return f"date({parsed.year}, {parsed.month}, {parsed.day})"
+
+        for name in ("notional", "strike", "n_paths", "seed"):
+            if term_fields.get(name) is not None:
+                overrides[name] = repr(term_fields[name])
+        for name in ("start_date", "end_date"):
+            if term_fields.get(name) is not None:
+                overrides[name] = _date_default(term_fields[name])
+        for name in ("accrual_dates", "fixing_dates", "payment_dates"):
+            if term_fields.get(name):
+                dates = ", ".join(_date_default(value) for value in term_fields[name])
+                overrides[name] = f"({dates},)"
+        for name in ("rate_index", "calendar_name", "business_day_adjustment", "model"):
+            if term_fields.get(name) is not None:
+                overrides[name] = str(term_fields[name])
+        if term_fields.get("cap_floor") is not None:
+            overrides["instrument_class"] = str(term_fields["cap_floor"])
+        if term_fields.get("payment_frequency") is not None:
+            overrides["frequency"] = _enum_default(
+                "Frequency", str(term_fields["payment_frequency"]).upper(),
+            )
+        if term_fields.get("day_count") is not None:
+            overrides["day_count"] = _enum_default(
+                "DayCountConvention", str(term_fields["day_count"]).replace("/", "_").upper(),
+            )
     elif spec_name == "NthToDefaultSpec":
         reference_names = tuple(getattr(product, "constituents", ()) or ())
         basket_weights = tuple(term_fields.get("basket_weights", ()) or ())
@@ -3809,6 +3837,18 @@ def _make_test_payoff(
         name_defaults["notional"] = 1.0 if heston_option_context else 10.0
         name_defaults["spot"] = spot_default
         name_defaults["strike"] = spot_default
+
+    if spec_schema.spec_name == "PeriodRateOptionStripSpec":
+        # Optional strip terms are economic choices: synthetic call/collar
+        # values would turn a plain cap into a different, unsupported product.
+        for field in spec_schema.fields:
+            if field.default is not None:
+                # The shared schema makes strike optional for collars, but a
+                # plain unstructured cap/floor still needs its smoke strike.
+                # Authored strikes keep their hydrated dataclass default.
+                if field.name == "strike" and field.default == "None":
+                    continue
+                name_defaults.pop(field.name, None)
 
     description = getattr(payoff_cls, "__doc__", "") or getattr(module, "__doc__", "") or ""
     description_defaults = _description_spec_defaults(
@@ -7808,8 +7848,8 @@ def _deterministic_exact_binding_evaluate_body(
                 ),
                 exercise_dates=getattr(spec, "exercise_dates", None) or getattr(spec, "call_dates", None),
                 is_payer=getattr(spec, "is_payer", None),
-                n_paths=20000,
-                seed=42,
+                n_paths=getattr(spec, "n_paths", 20000),
+                seed=getattr(spec, "seed", 42),
                 notional=getattr(spec, "notional", None),
                 strike=(
                     getattr(spec, "strike", None)
@@ -7870,8 +7910,8 @@ def _deterministic_exact_binding_evaluate_body(
                 frequency=spec.frequency,
                 day_count=spec.day_count,
                 rate_index=spec.rate_index,
-                n_paths=20000,
-                seed=42,
+                n_paths=getattr(spec, "n_paths", 20000),
+                seed=getattr(spec, "seed", 42),
             )
             """
         ).rstrip()

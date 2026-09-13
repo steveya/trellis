@@ -182,6 +182,32 @@ It was:
 
 ## What Is Still Transitional
 
+The E22 cap-strip proof now follows an authored contract end to end. Its
+manifest specifies every accrual, fixing and payment date, ACT/360 accrual,
+ACT/365 option time, ACT/ACT ISDA curve time, unadjusted dates, named market scenario and the
+100,000-path/seed-42 antithetic forward-marginal comparison. The direct
+semantic bridge preserves these fields when specializing to analytical or
+Monte Carlo. Generated spec defaults and benchmark overrides carry the
+same dates and controls; optional strip terms keep their declared defaults
+so smoke validation cannot invent a callable feature or collar strike. A plain
+unstructured cap/floor smoke fixture retains a usable common strike; an
+authored strike uses its hydrated default. The rendered build request includes
+the authored valuation measure, output unit and output currency.
+
+The cap/floor Monte Carlo family IR names scalar forward-rate marginals,
+exact lognormal antithetic sampling and independent fixing observations under
+each period's payment-forward measure. It does not describe that helper as
+Hull-White, an OU transition, or a replayed short-rate path. Both the stress and
+binding-first proof inventories use E22's `analytical` / `monte_carlo` targets
+and the `analytical` reference.
+
+The exact validator accepts the authored source row and its canonical
+materialized market envelope. It rejects altered economics, controls or
+scenario values before build. The title is descriptive only, and the
+comparison reports USD holder present value against its explicit 0.5%
+analytical-reference tolerance. Reproduce it with
+`scripts/run_tasks.py --task-id E22 --corpus proof_legacy --status all --offline-local-agents --fresh-build`.
+
 The system is much more coherent than it was, but a few things remain
 transitional:
 

@@ -4190,6 +4190,7 @@ def make_period_rate_option_strip_contract(
     instrument_class: str,
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "analytical",
+    term_fields: Mapping[str, Any] | None = None,
 ) -> SemanticContract:
     """Construct a schedule-driven period rate-option strip semantic contract."""
     normalized_instrument = str(instrument_class or "").strip().lower()
@@ -4224,7 +4225,7 @@ def make_period_rate_option_strip_contract(
         option_type=option_type,
         timeline=_default_semantic_timeline(
             schedule,
-            settlement_dates=schedule,
+            settlement_dates=tuple((term_fields or {}).get("payment_dates") or schedule),
             state_update_dates=schedule,
         ),
         underlier_structure="single_curve_rate_style",
@@ -4290,6 +4291,7 @@ def make_period_rate_option_strip_contract(
         ),
         term_fields=_freeze_mapping(
             {
+                **dict(term_fields or {}),
                 "option_type": option_type,
                 "schedule_authority": schedule_authority,
             }
@@ -5489,6 +5491,7 @@ def _rebuild_period_rate_option_strip_contract(
         instrument_class=str(getattr(product, "instrument_class", "") or "cap"),
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         preferred_method=normalized_method,
+        term_fields=dict(product.term_fields),
     )
 
 

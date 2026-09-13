@@ -771,6 +771,18 @@ lanes consume the same declared contract, and the task carries its own 2%
 comparison tolerance. Trellis does not infer those terms from the task title;
 missing, extra, or changed fields are rejected before pricing.
 
+E22 is an authored USD cap-strip example. It fixes the notional, strike,
+all quarterly accrual/fixing/payment dates, date conventions, named forecast
+and discount curves, Black volatility, sample count and random seed.
+Its analytical reference is the discounted Black caplet sum; its Monte
+Carlo comparison samples the same lognormal caplet forwards and allows
+0.5% relative price error. Both outputs are USD holder present values in
+currency amounts, and those output terms are included in the build request.
+This is a forward-marginal pricing proof, so it
+does not establish short-rate path simulation or general cap-market
+calibration support. The manifest fails admission if its required terms
+or controls are missing or changed.
+
 They also now carry compiler-emitted lane obligations. In practice that means
 the build loop sees the computational lane first (analytical, lattice, Monte
 Carlo, PDE, and so on), the timeline and market bindings that lane requires,
