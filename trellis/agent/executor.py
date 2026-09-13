@@ -600,42 +600,35 @@ def _hydrate_spec_schema_defaults_from_semantics(
     spec_name = str(getattr(spec_schema, "spec_name", "") or "")
 
     def _enum_default(prefix: str, raw_value: object | None) -> str | None:
-        if raw_value in {None, ""}:
+        from trellis.core.types import DayCountConvention, Frequency
+
+        if raw_value is None:
             return None
         text = str(raw_value).strip()
         if not text:
             return None
         if text.startswith(f"{prefix}."):
-            return text
+            text = text[len(prefix) + 1:]
         normalized = text.lower().replace("-", "_").replace(" ", "_")
         aliases = {
             "Frequency": {
-                "annual": "ANNUAL",
                 "yearly": "ANNUAL",
                 "semiannual": "SEMI_ANNUAL",
-                "semi_annual": "SEMI_ANNUAL",
-                "quarterly": "QUARTERLY",
-                "monthly": "MONTHLY",
             },
             "DayCountConvention": {
-                "act/360": "ACT_360",
-                "act_360": "ACT_360",
-                "act/365": "ACT_365",
                 "act/365f": "ACT_365",
-                "act_365": "ACT_365",
                 "act_365f": "ACT_365",
-                "act/act": "ACT_ACT",
-                "act_act": "ACT_ACT",
-                "30/360": "THIRTY_360",
-                "thirty_360": "THIRTY_360",
-                "30e/360": "THIRTY_E_360",
-                "thirty_e_360": "THIRTY_E_360",
             },
         }
-        member = aliases.get(prefix, {}).get(normalized)
-        if member is not None:
-            return f"{prefix}.{member}"
-        return f"{prefix}.{text}"
+        normalized = aliases.get(prefix, {}).get(normalized, normalized).lower()
+        enum_type = {"Frequency": Frequency, "DayCountConvention": DayCountConvention}[prefix]
+        # __members__ includes aliases omitted by iteration over an Enum.
+        # Emit only a verified attribute name, never raw semantic source text.
+        for name, member in enum_type.__members__.items():
+            value = str(member.value).lower().replace("-", "_").replace(" ", "_")
+            if normalized == name.lower() or normalized == value:
+                return f"{prefix}.{name}"
+        raise ValueError(f"Unsupported {prefix} convention: {raw_value!r}")
 
     overrides: dict[str, str] = {}
     if spec_name in {"SwaptionSpec", "BermudanSwaptionSpec"}:

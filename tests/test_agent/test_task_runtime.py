@@ -4705,7 +4705,8 @@ def test_effective_task_description_uses_authored_t73_contract_not_title_bootstr
     assert "Fixed leg: semi_annual, 30/360." in description
     assert "Float leg: quarterly USD-SOFR-3M, ACT/360." in description
     assert "Model time day count: 30/360." in description
-    assert "Settlement: cash at exercise_date." in description
+    assert "Exercise value convention: positive_payer_underlying_swap_npv." in description
+    assert "No contractual settlement convention or delivery lifecycle is modeled." in description
     assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
     assert "Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)" in description
 
@@ -5625,7 +5626,7 @@ def test_t73_semantic_contract_is_direct_and_title_independent(monkeypatch):
     assert contract.product.semantic_id == "rate_style_swaption"
     assert contract.product.exercise_style == "european"
     assert contract.product.observation_schedule == ("2025-11-15",)
-    assert contract.product.settlement_rule == "cash_settle_at_exercise"
+    assert contract.product.settlement_rule == "exercise_value_only"
     assert dict(contract.product.term_fields) == {
         "currency": "USD",
         "notional": 1_000_000.0,
@@ -5652,8 +5653,7 @@ def test_t73_semantic_contract_is_direct_and_title_independent(monkeypatch):
         "comparison_quote_convention": "black",
         "comparison_quote_subject": "swaption",
         "payer_receiver": "payer",
-        "settlement_type": "cash",
-        "settlement_timing": "exercise_date",
+        "exercise_value_convention": "positive_payer_underlying_swap_npv",
         "valuation_measure": "holder_present_value",
         "output_unit": "currency_amount",
         "output_currency": "USD",

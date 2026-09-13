@@ -833,13 +833,15 @@ and ``build_swaption_tree_spec(...)`` remain callable compatibility/reference
 APIs, but neither is live build authority.
 
 The checked T73 comparison should be read as one bounded proof, not a promise
-of general swaption coverage. It prices a cash-at-exercise European payer
-swaption with a constant-notional fixed leg, a simple SOFR-3M floating leg,
+of general swaption coverage. It values the positive payer underlying-swap NPV
+at exercise, discounted to valuation, with a constant-notional fixed leg,
+a simple SOFR-3M floating leg,
 flat named curves, and a constant-parameter one-factor Hull-White model. Its
 Black76 result is normalized from the Hull-White tree price, and its seeded
 Monte Carlo result has a looser, separately authored tolerance. Do not infer
 support for stochastic basis, convexity-adjusted or compounded floating
-coupons, irregular calendars/stubs, physical or annuity settlement, Bermudan
+coupons, irregular calendars/stubs, contractual cash/physical settlement
+(including par-yield cash annuity), delivery lifecycle, Bermudan
 exercise, term-structured parameters, multi-factor rates, or independent
 external parity from this proof.
 

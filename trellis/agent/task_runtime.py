@@ -1625,8 +1625,7 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             ),
             "comparison_quote_subject": contract.get("comparison_quote_subject"),
             "payer_receiver": contract.get("payer_receiver"),
-            "settlement_type": contract.get("settlement_type"),
-            "settlement_timing": contract.get("settlement_timing"),
+            "exercise_value_convention": contract.get("exercise_value_convention"),
             "valuation_measure": contract.get("valuation_measure"),
             "output_unit": contract.get("output_unit"),
             "output_currency": contract.get("output_currency"),
@@ -2102,7 +2101,28 @@ def _explicit_simulation_seed(task: dict, market_context: dict[str, Any]) -> tup
     extension_contract = (
         extension_contract if isinstance(extension_contract, Mapping) else {}
     )
+    target_seed_candidates = ()
+    if str(task.get("id") or "").strip() == "T73":
+        # The exact T73 proof has one stochastic target. Its spec override is
+        # what the generated estimator executes, not a generic replay default.
+        # Do not extend this to arbitrary multi-target tasks by picking one seed.
+        cross_validate = task.get("cross_validate")
+        targets = (
+            cross_validate.get("target_contracts")
+            if isinstance(cross_validate, Mapping)
+            else None
+        )
+        target = targets.get("hw_mc") if isinstance(targets, Mapping) else None
+        overrides = target.get("spec_overrides") if isinstance(target, Mapping) else None
+        if isinstance(overrides, Mapping):
+            target_seed_candidates = (
+                (
+                    "task.cross_validate.target_contracts.hw_mc.spec_overrides.seed",
+                    overrides.get("seed"),
+                ),
+            )
     seed_candidates = (
+        *target_seed_candidates,
         ("task.simulation_seed", task.get("simulation_seed")),
         ("task.seed", task.get("seed")),
         ("task.benchmark_contract.seed", benchmark_contract.get("seed")),

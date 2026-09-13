@@ -459,15 +459,19 @@ def build_discounted_swap_pv_payload(
 
     ``payment_timeline`` is the fixed leg. A separate floating timeline may
     carry its own reset frequency and accrual convention while retaining the
-    same model-time coordinate. Omitting it preserves the historical
-    single-timeline behavior.
+    same model-time coordinate. An explicit ``floating_timeline`` converts
+    time-based curve forwards on their model clock. Omitting it preserves the
+    historical single-timeline conversion that multiplies each forward by the
+    supplied accrual fraction. Pass the same timeline explicitly for both legs
+    to use model-clock conversion with identical schedules.
     """
     periods = tuple(payment_timeline or ())
     if not periods:
         raise ValueError("discounted_swap_pv payload requires at least one payment period")
+    legacy_single_timeline = floating_timeline is None
     floating_periods = (
         periods
-        if floating_timeline is None
+        if legacy_single_timeline
         else tuple(floating_timeline)
     )
     if not floating_periods:
@@ -544,13 +548,19 @@ def build_discounted_swap_pv_payload(
         if forward_curve is not None:
             if hasattr(forward_curve, "forward_rate"):
                 forward_rate = float(forward_curve.forward_rate(t_start, t_end))
-                # The time-based forward is annualized on the model clock,
-                # which can differ from the floating coupon's day count.
-                coupon_amount = forward_rate * (t_end - t_start)
+                # Explicit floating schedules use the curve's model clock;
+                # omitted schedules retain the original accrual conversion.
+                coupon_amount = forward_rate * (
+                    accrual if legacy_single_timeline else t_end - t_start
+                )
             else:
                 start_df = max(float(forward_curve.discount(t_start)), 1e-12)
                 end_df = max(float(forward_curve.discount(t_end)), 1e-12)
                 coupon_amount = start_df / end_df - 1.0
+                if legacy_single_timeline:
+                    coupon_amount = (
+                        coupon_amount / max(t_end - t_start, 1e-12) * accrual
+                    )
             forecast_float_leg += coupon_amount * ratio
 
     if not floating_payment_times:

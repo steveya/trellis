@@ -1364,7 +1364,7 @@ tasks:
   status: pending
 - id: T73
   title: 'European swaption: Black76 vs HW tree vs HW MC'
-  description: Price the authored cash-settled USD payer European swaption with Black76,
+  description: Price the authored USD payer European swaption exercise-value proof with Black76,
     a Hull-White tree, and seeded Hull-White Monte Carlo. Report holder present value
     in USD and compare Black76 and Monte Carlo with the Hull-White tree under their
     authored target tolerances.
@@ -1381,8 +1381,7 @@ tasks:
     product: swaption
     style: european
     payer_receiver: payer
-    settlement_type: cash
-    settlement_timing: exercise_date
+    exercise_value_convention: positive_payer_underlying_swap_npv
     currency: USD
     notional: 1000000.0
     settle_date: '2024-11-15'

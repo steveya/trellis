@@ -116,11 +116,23 @@ comparison parameters, conventions, and tree-step controls. The retained
 than the source identity of the generated artifact.
 
 The repository row for T73 now authors the economics, named market scenario,
-settlement/output contract, model parameters, numerical controls, reference
+exercise-value/output contract, model parameters, numerical controls, reference
 target, and per-target tolerances directly. Runtime synthesis must therefore
 remain title-independent. The proof does not establish external-library
 parity, independent Black-vs-Hull-White model agreement, Bermudan exercise,
-physical settlement, stochastic basis, or production calibration coverage.
+contractual cash/physical settlement, delivery lifecycle, stochastic basis, or
+production calibration coverage. Its semantic product and obligation record
+only the positive payer underlying-swap NPV at exercise, discounted to valuation;
+they do not assert a cash-settlement method.
+T73's replay seed is taken from
+`cross_validate.target_contracts.hw_mc.spec_overrides.seed`, the same seed
+executed by its sole Monte Carlo target; generic task or market defaults cannot
+replace it. Exact admission rejects top-level `seed` and `simulation_seed`
+aliases. Other task seed-resolution rules remain unchanged.
+
+Generated schedule defaults resolve frequency and day-count conventions to
+verified enum members (including supported aliases). Unknown conventions fail
+closed instead of being copied into generated Python source.
 
 Per-target-only tolerance maps must cover every non-reference price target.
 Missing entries fail before comparison execution; a tolerance for one target

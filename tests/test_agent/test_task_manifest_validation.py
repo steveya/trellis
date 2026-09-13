@@ -86,7 +86,7 @@ def _authored_legacy_swaption_task():
         "status": "pending",
         "task_definition_manifest": "TASKS_PROOF_LEGACY.yaml",
         "description": (
-            "Price the authored cash-settled USD payer European swaption with "
+            "Price the authored USD payer European swaption exercise-value proof with "
             "Black76, a Hull-White tree, and seeded Hull-White Monte Carlo. "
             "Report holder present value in USD and compare Black76 and Monte "
             "Carlo with the Hull-White tree under their authored target tolerances."
@@ -101,8 +101,7 @@ def _authored_legacy_swaption_task():
             "product": "swaption",
             "style": "european",
             "payer_receiver": "payer",
-            "settlement_type": "cash",
-            "settlement_timing": "exercise_date",
+            "exercise_value_convention": "positive_payer_underlying_swap_npv",
             "currency": "USD",
             "notional": 1_000_000.0,
             "settle_date": "2024-11-15",

@@ -1001,9 +1001,9 @@ def _benchmark_detail_lines(
                     "Hull-White model: "
                     f"mean reversion a={contract.get('comparison_mean_reversion')}, "
                     f"vol sigma={contract.get('comparison_sigma')}.",
-                    "Settlement: "
-                    f"{contract.get('settlement_type')} at "
-                    f"{contract.get('settlement_timing')}.",
+                    "Exercise value convention: "
+                    f"{contract.get('exercise_value_convention')}.",
+                    "No contractual settlement convention or delivery lifecycle is modeled.",
                     "Valuation measure: "
                     f"{contract.get('valuation_measure')} in "
                     f"{contract.get('output_currency')} {contract.get('output_unit')}.",
@@ -1353,8 +1353,7 @@ def _swaption_overrides(
                     contract.get("model_time_day_count")
                 ),
                 "rate_index": contract.get("rate_index"),
-                "settlement_type": contract.get("settlement_type"),
-                "settlement_timing": contract.get("settlement_timing"),
+                "exercise_value_convention": contract.get("exercise_value_convention"),
                 "valuation_measure": contract.get("valuation_measure"),
                 "output_unit": contract.get("output_unit"),
                 "output_currency": contract.get("output_currency"),

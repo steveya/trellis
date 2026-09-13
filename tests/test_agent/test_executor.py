@@ -1080,6 +1080,62 @@ def test_hydrate_swaption_semantic_manifest_aliases_produces_valid_python():
     assert "model_time_day_count: DayCountConvention | None = DayCountConvention.THIRTY_360" in skeleton
 
 
+@pytest.mark.parametrize("field_name", ["fixed_leg_day_count", "float_leg_day_count", "model_time_day_count"])
+@pytest.mark.parametrize(
+    "raw_value,member_name",
+    [
+        ("ACT/365.25", "ACT_365_25"),
+        ("30E/360 ISDA", "THIRTY_E_360_ISDA"),
+        ("ACT/ACT ICMA", "ACT_ACT_ICMA"),
+        ("BUS/252", "BUS_252"),
+        ("1/1", "ONE_ONE"),
+        ("ACT_ACT_ISDA", "ACT_ACT_ISDA"),
+        ("DayCountConvention.ACT_365_FIXED", "ACT_365_FIXED"),
+        ("ACT/365F", "ACT_365"),
+    ],
+)
+def test_hydrate_swaption_resolves_real_day_count_members(field_name, raw_value, member_name):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _generate_skeleton, _hydrate_spec_schema_defaults_from_semantics
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.conventions.day_count import DayCountConvention
+
+    contract = SimpleNamespace(product=SimpleNamespace(term_fields={field_name: raw_value}))
+    schema = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["swaption"], semantic_contract=contract,
+    )
+    namespace = {}
+    exec(_generate_skeleton(schema, "Convention hydration only"), namespace)
+    spec_field = {"fixed_leg_day_count": "day_count", "float_leg_day_count": "float_day_count"}.get(
+        field_name, field_name,
+    )
+    assert getattr(namespace["SwaptionSpec"], spec_field) is DayCountConvention[member_name]
+
+
+@pytest.mark.parametrize(
+    "field_name,raw_value",
+    [
+        ("fixed_leg_day_count", "ACT/999"),
+        ("float_leg_day_count", "DayCountConvention.UNKNOWN"),
+        ("model_time_day_count", "ACT/365; raise RuntimeError('invalid')"),
+        ("payment_frequency", "Frequency.UNKNOWN"),
+        ("float_frequency", "fortnightly"),
+    ],
+)
+def test_hydrate_swaption_rejects_unknown_conventions_before_source_generation(field_name, raw_value):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _hydrate_spec_schema_defaults_from_semantics
+    from trellis.agent.planner import STATIC_SPECS
+
+    contract = SimpleNamespace(product=SimpleNamespace(term_fields={field_name: raw_value}))
+    with pytest.raises(ValueError, match="Unsupported .* convention"):
+        _hydrate_spec_schema_defaults_from_semantics(
+            STATIC_SPECS["swaption"], semantic_contract=contract,
+        )
+
+
 def test_hydrate_spec_schema_defaults_from_weighted_nth_to_default_semantics():
     from types import SimpleNamespace
 

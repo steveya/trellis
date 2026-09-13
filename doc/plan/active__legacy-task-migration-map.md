@@ -103,7 +103,7 @@ remain outside executable pricing selection.
 | `T70` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | Bootstrap yield curve from swap rates |
 | `T71` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | CDS hazard rate bootstrap from spreads |
 | `T72` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Implied vol surface: SVI parameterization |
-| `T73` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored cash-settled European swaption: HW-normalized Black76 vs HW tree vs seeded HW MC |
+| `T73` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored positive payer swap-NPV exercise value: HW-normalized Black76 vs HW tree vs seeded HW MC; no contractual settlement convention |
 | `T74` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | European equity call: 5-way (tree, PDE, MC, FFT, COS) |
 | `T75` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | American put: tree vs PDE vs LSM at 3 vol levels |
 | `T76` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Heston European: analytical vs MC vs PDE vs FFT vs COS |

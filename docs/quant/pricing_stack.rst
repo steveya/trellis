@@ -248,6 +248,16 @@ the rate on the floating accrual basis is that amount divided by the floating
 accrual fraction. This preserves the discount-factor ratio and gives zero curve
 basis when the discount and forecast curves coincide, even when the two day
 counts differ.
+
+The low-level ``build_discounted_swap_pv_payload(...)`` retains its historical
+accrual-based forward conversion when ``floating_timeline`` is omitted, for
+compatibility with independently authored ``SchedulePeriod`` inputs. That
+legacy convention can retain a nonzero basis when its accrual fractions and
+model-time intervals differ. Pass ``floating_timeline`` explicitly, even if it
+equals the fixed timeline, to select the consistent model-clock conversion.
+The generated rate-style swaption adapters and the T73 proof always supply
+that explicit floating timeline.
+
 It does not substitute an equity GBM process. The product-level
 ``price_swaption_monte_carlo(...)`` and
 ``resolve_swaption_monte_carlo_problem(...)`` APIs remain compatibility and
@@ -1009,12 +1019,16 @@ comparison-quality sampling controls instead of drifting on an unseeded
 default path.
 
 The authored ``T73`` proof is deliberately narrower than general swaption
-pricing. It fixes a cash-at-exercise European payer contract, named USD OIS and
+pricing. It fixes the positive payer underlying-swap NPV at exercise,
+discounted to valuation, with named USD OIS and
 SOFR-3M curves, separate fixed and floating schedules, one model-time clock, a
 named constant-parameter Hull-White regime, and exact lattice/Monte Carlo
 controls. Its Black76 target is the Black implied-vol normalization of the
 Hull-White tree price, not an independent model oracle; the seeded Monte Carlo
 target is accepted only under its separately authored sampling tolerance.
+The semantic contract records a valuation-only exercise-value obligation.
+No contractual cash/physical settlement convention or delivery lifecycle is
+modeled; in particular, this does not establish par-yield cash-annuity pricing.
 When a comparison authors only per-target tolerances, every non-reference
 target must have an explicit tolerance; the runtime does not infer one from
 another target's allowance.

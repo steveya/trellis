@@ -468,7 +468,8 @@ def test_t73_swaption_renders_and_hydrates_without_title_defaults():
     assert "Model time day count: 30/360." in description
     assert "Market curves: discount=usd_ois, forecast=USD-SOFR-3M." in description
     assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
-    assert "Settlement: cash at exercise_date." in description
+    assert "Exercise value convention: positive_payer_underlying_swap_npv." in description
+    assert "No contractual settlement convention or delivery lifecycle is modeled." in description
     assert "Valuation measure: holder_present_value in USD currency_amount." in description
     assert overrides == {
         "notional": pytest.approx(1_000_000.0),
@@ -484,8 +485,7 @@ def test_t73_swaption_renders_and_hydrates_without_title_defaults():
         "model_time_day_count": DayCountConvention.THIRTY_360,
         "rate_index": "USD-SOFR-3M",
         "is_payer": True,
-        "settlement_type": "cash",
-        "settlement_timing": "exercise_date",
+        "exercise_value_convention": "positive_payer_underlying_swap_npv",
         "valuation_measure": "holder_present_value",
         "output_unit": "currency_amount",
         "output_currency": "USD",

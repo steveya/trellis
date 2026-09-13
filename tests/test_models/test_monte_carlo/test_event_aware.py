@@ -680,6 +680,52 @@ class TestEventAwareMonteCarloAssembly:
 
         assert payload["curve_basis_spread"] == pytest.approx(0.0, abs=1e-13)
 
+    @pytest.mark.legacy_compat
+    @pytest.mark.parametrize("use_forward_wrapper", [False, True])
+    def test_omitted_floating_timeline_preserves_authored_accrual_conversion(
+        self, use_forward_wrapper
+    ):
+        from trellis.core.types import SchedulePeriod
+        from trellis.curves.forward_curve import ForwardCurve
+        from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+
+        # The public pre-dual-leg API accepted independently authored accrual
+        # and model-time coordinates in SchedulePeriod, without a clock field.
+        period = SchedulePeriod(
+            start_date=date(2025, 11, 15),
+            end_date=date(2026, 2, 15),
+            payment_date=date(2026, 2, 15),
+            accrual_fraction=92.0 / 360.0,
+            t_start=1.0,
+            t_end=1.25,
+            t_payment=1.25,
+        )
+        curve = YieldCurve.flat(0.04, max_tenor=10.0)
+        common = {
+            "payment_timeline": (period,),
+            "discount_curve": curve,
+            "forward_curve": ForwardCurve(curve) if use_forward_wrapper else curve,
+            "exercise_time": 1.0,
+            "discount_reducer_name": "discount_to_expiry",
+            "mean_reversion": 0.05,
+            "strike": 0.03,
+        }
+
+        legacy = build_discounted_swap_pv_payload(**common)
+        explicit = build_discounted_swap_pv_payload(
+            **common, floating_timeline=(period,)
+        )
+
+        # The omitted-timeline contract annualized the forward on model time
+        # but accrued it on the supplied alpha. The explicit lane opts into
+        # consistent model-clock projection, even for the same period object.
+        forward = (raw_np.exp(0.04 * 0.25) - 1.0) / 0.25
+        discount_par = (raw_np.exp(0.04 * 0.25) - 1.0) / (92.0 / 360.0)
+        assert legacy["curve_basis_spread"] == pytest.approx(
+            forward - discount_par, abs=1e-13
+        )
+        assert explicit["curve_basis_spread"] == pytest.approx(0.0, abs=1e-13)
+
     def test_resolve_hull_white_monte_carlo_process_inputs_reads_market_surface(self):
         from trellis.models.monte_carlo.event_aware import resolve_hull_white_monte_carlo_process_inputs
 
