@@ -2400,17 +2400,112 @@ tasks:
     analytical: black_scholes
   status: pending
 - id: E22
-  title: 'Cap/floor: Black caplet stack vs MC rate simulation'
+  title: 'Cap strip: Black caplets vs sampled forward marginals'
+  description: >-
+    Price the authored USD cap strip under the named rates scenario. Compare
+    discounted Black-76 caplets with seeded antithetic Monte Carlo of independent
+    lognormal caplet forward marginals, reporting holder present value in USD.
+  task_disposition: executable_pricing
+  instrument_type: period_rate_option_strip
+  market_scenario_id: usd_rates_smile
+  validation_policy: invariants_and_cross_method
   construct:
   - analytical
   - monte_carlo
   new_component: null
-  market:
-    source: mock
-    as_of: 2024-11-15
-    discount_curve: usd_ois
-    forecast_curve: USD-SOFR-3M
-    vol_surface: usd_rates_smile
+  benchmark_contract:
+    product: period_rate_option_strip
+    cap_floor: cap
+    currency: USD
+    notional: 1000000.0
+    strike: 0.04
+    valuation_date: '2024-11-15'
+    start_date: '2025-02-15'
+    end_date: '2030-02-15'
+    payment_frequency: quarterly
+    day_count: ACT/360
+    model_time_day_count: ACT/365
+    discount_curve_day_count: ACT/ACT ISDA
+    forecast_curve_day_count: ACT/ACT ISDA
+    calendar_name: weekend_only
+    business_day_adjustment: unadjusted
+    fixing_rule: accrual_start
+    payment_rule: accrual_end
+    fixing_lag_days: 0
+    payment_lag_days: 0
+    accrual_dates:
+    - '2025-02-15'
+    - '2025-05-15'
+    - '2025-08-15'
+    - '2025-11-15'
+    - '2026-02-15'
+    - '2026-05-15'
+    - '2026-08-15'
+    - '2026-11-15'
+    - '2027-02-15'
+    - '2027-05-15'
+    - '2027-08-15'
+    - '2027-11-15'
+    - '2028-02-15'
+    - '2028-05-15'
+    - '2028-08-15'
+    - '2028-11-15'
+    - '2029-02-15'
+    - '2029-05-15'
+    - '2029-08-15'
+    - '2029-11-15'
+    - '2030-02-15'
+    fixing_dates:
+    - '2025-02-15'
+    - '2025-05-15'
+    - '2025-08-15'
+    - '2025-11-15'
+    - '2026-02-15'
+    - '2026-05-15'
+    - '2026-08-15'
+    - '2026-11-15'
+    - '2027-02-15'
+    - '2027-05-15'
+    - '2027-08-15'
+    - '2027-11-15'
+    - '2028-02-15'
+    - '2028-05-15'
+    - '2028-08-15'
+    - '2028-11-15'
+    - '2029-02-15'
+    - '2029-05-15'
+    - '2029-08-15'
+    - '2029-11-15'
+    payment_dates:
+    - '2025-05-15'
+    - '2025-08-15'
+    - '2025-11-15'
+    - '2026-02-15'
+    - '2026-05-15'
+    - '2026-08-15'
+    - '2026-11-15'
+    - '2027-02-15'
+    - '2027-05-15'
+    - '2027-08-15'
+    - '2027-11-15'
+    - '2028-02-15'
+    - '2028-05-15'
+    - '2028-08-15'
+    - '2028-11-15'
+    - '2029-02-15'
+    - '2029-05-15'
+    - '2029-08-15'
+    - '2029-11-15'
+    - '2030-02-15'
+    rate_index: USD-SOFR-3M
+    model: black
+    mc_distribution: independent_lognormal_forward_marginals
+    sampling: antithetic
+    n_paths: 100000
+    seed: 42
+    valuation_measure: holder_present_value
+    output_unit: currency_amount
+    output_currency: USD
   market_assertions:
     requires:
     - discount_curve
@@ -2422,8 +2517,42 @@ tasks:
       vol_surface: usd_rates_smile
   cross_validate:
     internal:
-    - mc_rate_cap
-    analytical: black76_cap
+    - analytical
+    - monte_carlo
+    reference_target: analytical
+    relations:
+      monte_carlo: within_tolerance
+    tolerance_pct: 0.5
+    tolerance_unit: percent_of_reference_price
+    output_unit: currency_amount
+    output_currency: USD
+    target_contracts:
+      analytical:
+        method: analytical
+        route_family: analytical
+        backend_binding_id: trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical
+        validation_bundle_id: analytical:cap
+        payoff_family: period_rate_option_strip
+        exercise_style: none
+        model_family: interest_rate
+        observation_style: fixed_schedule
+        variant_parameters:
+          model: black
+      monte_carlo:
+        method: monte_carlo
+        route_family: monte_carlo
+        backend_binding_id: trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo
+        validation_bundle_id: monte_carlo:cap
+        payoff_family: period_rate_option_strip
+        exercise_style: none
+        model_family: interest_rate
+        observation_style: fixed_schedule
+        variant_parameters:
+          distribution: independent_lognormal_forward_marginals
+          sampling: antithetic
+        spec_overrides:
+          n_paths: 100000
+          seed: 42
   status: pending
 - id: E23
   title: 'European equity call under local vol: PDE vs MC'

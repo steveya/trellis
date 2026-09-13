@@ -1282,6 +1282,27 @@ caplet/floorlet strips no longer get rejected as generic ``automatic`` event
 routes when the lowered family IR is already the checked analytical strip
 surface.
 
+The authored E22 cap-strip proof uses the existing
+``price_rate_cap_floor_strip_analytical`` and
+``price_rate_cap_floor_strip_monte_carlo`` kernels. Both sum the same twenty
+quarterly caplets on USD 1,000,000 at a 4% strike, from 2025-02-15 through
+2030-02-15. The contract authors every accrual boundary, fixing date and
+payment date. Fixings occur at accrual start, payments at accrual end,
+with zero lag and unadjusted dates; ACT/360 measures accrual and ACT/365
+measures option expiry. Both date-aware curves use the separately authored
+ACT/ACT ISDA clock for discount factors and projected forwards. The named ``usd_rates_smile``
+scenario supplies 4% OIS discounting, a 4.25% SOFR-3M forecast curve and
+20% Black forward volatility, valued on 2024-11-15.
+
+The Monte Carlo leg samples each caplet's lognormal forward marginal with
+100,000 antithetic samples and seed 42. It uses the same forward, fixing
+expiry, accrual, payment discount and Black volatility as the analytical
+leg. The 0.5% tolerance is a relative error in holder present value. This
+proof does not simulate a short-rate path or assert a joint model for
+caplet forwards; cross-caplet dependence is unnecessary for this linear
+sum of individual option expectations. It does not validate calibration,
+shifted/normal volatility, seasoned fixings or production holiday rules.
+
 Below those public callable wrappers, the reusable coupon/event/control layer
 now lives in ``trellis.models.short_rate_fixed_income``. Coupon schedule
 compilation, embedded issuer/holder exercise semantics, straight-bond

@@ -277,6 +277,8 @@ def benchmark_request_description(
         title = "USD fixed-coupon callable bond proof"
     elif str(task.get("id") or "").strip() == "T102" and product == "rainbow_option":
         title = "Two-asset European terminal best-of call"
+    elif str(task.get("id") or "").strip() == "E22" and product == "period_rate_option_strip":
+        title = "USD cap strip with authored forward-marginal comparison"
     else:
         title = str(task.get("title") or "Benchmark pricing task").strip()
     lines = [f"Build a pricer for: {title}", ""]
@@ -922,6 +924,18 @@ def _benchmark_detail_lines(
             lines.append(f"Payment frequency: {contract['payment_frequency']}.")
         if contract.get("day_count"):
             lines.append(f"Day count: {contract['day_count']}.")
+        for field in (
+            "model_time_day_count", "discount_curve_day_count", "forecast_curve_day_count",
+            "calendar_name", "business_day_adjustment",
+            "fixing_rule", "payment_rule", "fixing_lag_days", "payment_lag_days",
+            "mc_distribution", "sampling", "n_paths", "seed",
+        ):
+            if contract.get(field) is not None:
+                lines.append(f"{field}: {contract[field]}.")
+        for field in ("accrual_dates", "fixing_dates", "payment_dates"):
+            if contract.get(field):
+                dates = ", ".join(str(value) for value in contract[field])
+                lines.append(f"{field}: {dates}.")
         if scenario_contract is not None and scenario_contract.forecast_curve_name:
             lines.append(f"Rate index: {scenario_contract.forecast_curve_name}.")
         model = str(contract.get("model") or "").strip().lower()
@@ -1252,6 +1266,8 @@ def _rate_cap_floor_overrides(
             or ("collar" if product == "rate_cap_floor_collar" else None)
         ),
         "model": str(contract.get("model") or "black").strip().lower() or None,
+        "n_paths": int(contract["n_paths"]) if contract.get("n_paths") is not None else None,
+        "seed": int(contract["seed"]) if contract.get("seed") is not None else None,
         "shift": _float_or_none(contract.get("shift")),
         "sabr": dict(contract.get("sabr") or {}) or None,
         "exercise_style": str(contract.get("style") or "").strip().lower() or None,

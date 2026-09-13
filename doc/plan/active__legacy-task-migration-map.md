@@ -155,7 +155,7 @@ remain outside executable pricing selection.
 | `T125` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Swing option: dynamic programming on tree vs LSM MC |
 | `T126` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Spread option (Kirk approximation) vs 2D MC vs 2D FFT |
 | `E21` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | European equity call: 5-way (tree, PDE, MC, FFT, COS) |
-| `E22` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Cap/floor: Black caplet stack vs MC rate simulation |
+| `E22` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored Black caplets versus seeded lognormal forward marginals |
 | `E23` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | European equity call under local vol: PDE vs MC |
 | `E24` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Merton jump-diffusion call: MC vs FFT |
 | `E25` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | FX option (EURUSD): GK analytical vs MC |

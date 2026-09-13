@@ -1584,6 +1584,20 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             },
         )
 
+    if task_id == "E22":
+        from trellis.agent.semantic_contracts import make_period_rate_option_strip_contract
+
+        contract = task.get("benchmark_contract")
+        if not isinstance(contract, Mapping):
+            raise ValueError("E22 requires a structured benchmark_contract")
+        return make_period_rate_option_strip_contract(
+            description=description,
+            instrument_class=str(contract["cap_floor"]),
+            observation_schedule=tuple(str(value) for value in contract["fixing_dates"]),
+            preferred_method="analytical",
+            term_fields=dict(contract),
+        )
+
     if task_id == "T102":
         from trellis.agent.semantic_contracts import make_terminal_basket_option_contract
 

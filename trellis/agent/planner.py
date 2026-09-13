@@ -155,6 +155,8 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
             FieldDef("calendar_name", "str | None", "Calendar name for generated schedules", "None"),
             FieldDef("business_day_adjustment", "str | None", "Business-day adjustment convention", "None"),
+            FieldDef("n_paths", "int", "Monte Carlo samples per caplet", "20000"),
+            FieldDef("seed", "int", "Monte Carlo random seed", "42"),
             FieldDef("model", "str | None", "Cap/floor model override", "None"),
             FieldDef("shift", "float | None", "Shift for shifted-Black pricing", "None"),
             FieldDef("sabr", "dict[str, float] | None", "SABR parameter bundle", "None"),
