@@ -2706,6 +2706,10 @@ def _validate_rate_style_swaption_shape(
         ))
         if product.maturity_settlement_rule != "exercise_value_only":
             errors.append("Swaption exercise-value mode cannot declare maturity settlement.")
+        if product.timeline.settlement_dates:
+            errors.append("Swaption exercise-value mode cannot declare settlement dates.")
+        if tuple(product.timeline.decision_dates) != tuple(product.observation_schedule):
+            errors.append("Swaption exercise-value mode must retain its exact exercise decision date.")
         obligations = tuple(product.obligations)
         if len(obligations) != 1 or (
             obligations[0].obligation_id,

@@ -11,7 +11,11 @@ from trellis.core.date_utils import normalize_explicit_dates, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
-from trellis.models.calibration.rates import build_swaption_leg_timelines, swaption_terms
+from trellis.models.calibration.rates import (
+    _uses_explicit_swaption_leg_conventions,
+    build_swaption_leg_timelines,
+    swaption_terms,
+)
 from trellis.models.monte_carlo.event_aware import (
     EventAwareMonteCarloProblem,
     EventAwareMonteCarloProblemSpec,
@@ -272,7 +276,10 @@ def resolve_swaption_curve_basis_spread(
 
     payload = build_discounted_swap_pv_payload(
         payment_timeline=payment_timeline,
-        floating_timeline=floating_payment_timeline,
+        floating_timeline=(
+            floating_payment_timeline
+            if _uses_explicit_swaption_leg_conventions(spec) else None
+        ),
         discount_curve=market_state.discount,
         forward_curve=forward_curve,
         exercise_time=expiry_years,
@@ -432,7 +439,10 @@ def resolve_swaption_monte_carlo_problem(
 
     settlement_payload = build_discounted_swap_pv_payload(
         payment_timeline=payment_timeline,
-        floating_timeline=floating_payment_timeline,
+        floating_timeline=(
+            floating_payment_timeline
+            if _uses_explicit_swaption_leg_conventions(spec) else None
+        ),
         discount_curve=market_state.discount,
         forward_curve=forward_curve,
         exercise_time=float(resolved.expiry_years),

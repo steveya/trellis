@@ -939,6 +939,7 @@ def swaption_terms(
         annuity += tau * df
         payment_count += 1
 
+    explicit_leg_conventions = _uses_explicit_swaption_leg_conventions(spec)
     float_pv = 0.0
     for period in floating_timeline:
         if period.end_date <= market_state.settlement:
@@ -948,9 +949,14 @@ def swaption_terms(
         t_payment = float(period.t_payment or t_end)
         df = float(market_state.discount.discount(t_payment))
         fwd = float(fwd_curve.forward_rate(t_start, t_end))
-        # Time-based forwards are annualized on the model clock. Converting
-        # to the coupon day count and then accruing cancels its year fraction.
-        float_pv += fwd * (t_end - t_start) * df
+        # Legacy single-schedule specs use the authored accrual fraction;
+        # even one 30/360 clock is not additive at month ends. Explicit leg
+        # conventions opt into the model-clock coupon conversion.
+        accrual = (
+            t_end - t_start if explicit_leg_conventions
+            else float(period.accrual_fraction or 0.0)
+        )
+        float_pv += fwd * accrual * df
 
     expiry = year_fraction(
         market_state.settlement,
@@ -959,6 +965,14 @@ def swaption_terms(
     )
     swap_rate = float_pv / annuity if annuity > 0.0 else 0.0
     return float(expiry), float(annuity), float(swap_rate), payment_count
+
+
+def _uses_explicit_swaption_leg_conventions(spec: SwaptionLike) -> bool:
+    """Distinguish authored leg/model conventions from single-schedule callers."""
+    return any(
+        getattr(spec, field, None) is not None
+        for field in ("float_frequency", "float_day_count", "model_time_day_count")
+    )
 
 
 def build_swaption_leg_timelines(

@@ -3476,7 +3476,7 @@ def make_rate_style_swaption_contract(
         timeline=_default_semantic_timeline(
             schedule,
             includes_decision=True,
-            settlement_dates=schedule,
+            settlement_dates=() if exercise_value_only else schedule,
             state_update_dates=schedule,
         ),
         underlier_structure="single_curve_rate_style",
@@ -6096,13 +6096,13 @@ def _default_semantic_timeline(
     schedule: tuple[str, ...] | list[str],
     *,
     includes_decision: bool = False,
-    settlement_dates: tuple[str, ...] | list[str] = (),
+    settlement_dates: tuple[str, ...] | list[str] | None = None,
     state_update_dates: tuple[str, ...] | list[str] = (),
 ) -> SemanticTimeline:
-    """Build the default phase-aware timeline used in tranche 1."""
+    """Default omitted settlement to maturity; preserve explicitly empty dates."""
     normalized_schedule = _normalize_schedule(schedule)
     normalized_settlement = _normalize_schedule(
-        settlement_dates or (normalized_schedule[-1:],)
+        normalized_schedule[-1:] if settlement_dates is None else settlement_dates
     ) if normalized_schedule else ()
     normalized_state_updates = _normalize_schedule(state_update_dates)
     return SemanticTimeline(
@@ -6140,6 +6140,55 @@ def _legacy_state_fields(values) -> tuple[StateField, ...]:
     return tuple(fields)
 
 
+def _parse_explicit_event_machine(payload: object) -> object:
+    """Hydrate an explicit machine without deriving or discarding authored fields."""
+    from trellis.agent.event_machine import (
+        EventAction,
+        EventGuard,
+        EventMachine,
+        EventState,
+        EventTransition,
+    )
+
+    sequence_fields = {
+        EventMachine: {"states": EventState, "transitions": EventTransition, "terminal_states": str},
+        EventState: {"state_variables": str},
+        EventGuard: {"parameters": str},
+        EventAction: {"parameters": str},
+    }
+    optional_records = {"guard": EventGuard, "action": EventAction}
+
+    def parse_record(value, record_type):
+        if isinstance(value, record_type):
+            return value
+        if not isinstance(value, Mapping):
+            raise TypeError(f"{record_type.__name__} must be a typed record or mapping")
+        fields = dict(value)
+        for name, item in fields.items():
+            item_type = sequence_fields.get(record_type, {}).get(name)
+            if item_type is not None:
+                if not isinstance(item, (tuple, list)):
+                    raise TypeError(f"{record_type.__name__}.{name} must be a list or tuple")
+                if item_type is str:
+                    if not all(isinstance(entry, str) for entry in item):
+                        raise TypeError(f"{record_type.__name__}.{name} must contain strings")
+                    fields[name] = tuple(item)
+                else:
+                    fields[name] = tuple(parse_record(entry, item_type) for entry in item)
+            elif record_type is EventTransition and name in optional_records:
+                fields[name] = None if item is None else parse_record(item, optional_records[name])
+            elif record_type is EventTransition and name == "priority":
+                if type(item) is not int:
+                    raise TypeError("EventTransition.priority must be an integer")
+            elif not isinstance(item, str):
+                raise TypeError(f"{record_type.__name__}.{name} must be a string")
+        # Constructors reject unknown fields and missing required fields; an
+        # explicit malformed machine must never fall back to derived semantics.
+        return record_type(**fields)
+
+    return parse_record(payload, EventMachine)
+
+
 def _derive_event_machine(
     event_transitions: tuple[str, ...] | list[str],
     *,
@@ -6148,7 +6197,7 @@ def _derive_event_machine(
 ) -> object | None:
     """Derive a typed event machine from legacy transitions when needed."""
     if explicit_machine is not None:
-        return explicit_machine
+        return _parse_explicit_event_machine(explicit_machine)
     transitions = _tuple(event_transitions)
     if not transitions:
         return None

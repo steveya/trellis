@@ -8054,6 +8054,10 @@ def _deterministic_exact_binding_evaluate_body(
             )
             settlement = getattr(market_state, "settlement", None) or market_state.as_of
             swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
+            explicit_leg_conventions = any(
+                getattr(spec, field, None) is not None
+                for field in ("float_frequency", "float_day_count", "model_time_day_count")
+            )
             float_frequency = spec.float_frequency or spec.swap_frequency
             float_day_count = spec.float_day_count or spec.day_count
             model_time_day_count = spec.model_time_day_count or spec.day_count
@@ -8082,8 +8086,10 @@ def _deterministic_exact_binding_evaluate_body(
                     label="rate_style_swaption_monte_carlo_floating_leg",
                 )
                 if period.end_date > settlement
-            )
-            if not fixed_payment_timeline or not floating_payment_timeline:
+            ) if explicit_leg_conventions else None
+            if not fixed_payment_timeline or (
+                explicit_leg_conventions and not floating_payment_timeline
+            ):
                 raise ValueError(
                     "Rate-style swaption Monte Carlo pricing requires future fixed and floating payments after settlement"
                 )

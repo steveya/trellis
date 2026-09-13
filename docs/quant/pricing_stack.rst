@@ -224,9 +224,9 @@ surface directly:
 
 1. ``resolve_swaption_black76_inputs(...)`` binds the typed expiry and market
    conventions;
-2. separate ``build_payment_timeline(...)`` calls start the fixed and floating
-   legs at the explicit ``swap_start`` while measuring both legs on one
-   authored model-time day-count clock;
+2. ``build_payment_timeline(...)`` starts the fixed leg at ``swap_start``;
+   explicitly authored floating/model-time conventions add a separate floating
+   timeline while measuring both legs on one model-time day-count clock;
 3. ``resolve_hull_white_monte_carlo_process_inputs(...)`` binds the short-rate
    process;
 4. ``build_discounted_swap_pv_payload(...)`` and
@@ -255,8 +255,13 @@ compatibility with independently authored ``SchedulePeriod`` inputs. That
 legacy convention can retain a nonzero basis when its accrual fractions and
 model-time intervals differ. Pass ``floating_timeline`` explicitly, even if it
 equals the fixed timeline, to select the consistent model-clock conversion.
-The generated rate-style swaption adapters and the T73 proof always supply
-that explicit floating timeline.
+Rate-style helpers and generated adapters select that explicit path when any
+of ``float_frequency``, ``float_day_count``, or ``model_time_day_count`` is
+non-``None``; the T73 proof authors all three. With all three absent, the
+single-schedule forward-times-accrual behavior is retained even for non-additive
+30/360 month-end periods. Explicit conventions also propagate on ordinary
+benchmark requests such as F006, independently of any comparison-model
+parameter set.
 
 It does not substitute an equity GBM process. The product-level
 ``price_swaption_monte_carlo(...)`` and

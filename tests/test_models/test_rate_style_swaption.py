@@ -150,6 +150,49 @@ def test_price_swaption_black76_is_positive():
     assert price > 0.0
 
 
+@pytest.mark.parametrize("explicit_conventions", [False, True])
+def test_month_end_swaption_preserves_legacy_accrual_conversion(explicit_conventions):
+    from trellis.models.calibration.rates import build_swaption_leg_timelines, swaption_terms
+    from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+
+    class MonthEndSpec(_EuropeanSpec):
+        expiry_date = date(2025, 1, 31)
+        swap_start = expiry_date
+        swap_end = date(2026, 1, 31)
+        swap_frequency = Frequency.MONTHLY
+        day_count = DayCountConvention.THIRTY_360
+
+    spec = MonthEndSpec()
+    if explicit_conventions:
+        spec.model_time_day_count = DayCountConvention.THIRTY_360
+    market = _market_state()
+    fixed, floating, clock = build_swaption_leg_timelines(spec, market)
+    assert any(abs(period.accrual_fraction - (period.t_end - period.t_start)) > 1e-6 for period in floating)
+    annuity = sum(period.accrual_fraction * market.discount.discount(period.t_payment) for period in fixed)
+    expected_float_pv = sum(
+        market.forward_curve.forward_rate(period.t_start, period.t_end)
+        * (period.t_end - period.t_start if explicit_conventions else period.accrual_fraction)
+        * market.discount.discount(period.t_payment)
+        for period in floating
+    )
+    assert swaption_terms(spec, market)[2] == pytest.approx(expected_float_pv / annuity, abs=1e-14)
+
+    expected_payload = build_discounted_swap_pv_payload(
+        payment_timeline=tuple(fixed),
+        floating_timeline=tuple(floating) if explicit_conventions else None,
+        discount_curve=market.discount, forward_curve=market.forward_curve,
+        exercise_time=year_fraction(SETTLE, spec.expiry_date, clock),
+        discount_reducer_name="curve_basis_only", mean_reversion=0.0,
+        strike=spec.strike, notional=spec.notional, is_payer=spec.is_payer,
+        anchor_short_rate=0.05,
+    )
+    expected_basis = expected_payload["curve_basis_spread"]
+    assert resolve_swaption_curve_basis_spread(market, spec) == pytest.approx(expected_basis, abs=1e-14)
+    problem = resolve_swaption_monte_carlo_problem(market, spec, mean_reversion=0.0, sigma=0.01)
+    payload = next(event.payload for event in problem.event_timeline.events if event.name == "swaption_settlement")
+    assert payload["curve_basis_spread"] == pytest.approx(expected_basis, abs=1e-14)
+
+
 def test_price_swaption_black76_raw_matches_public_wrapper():
     market_state = _market_state()
     resolved = resolve_swaption_black76_inputs(market_state, _EuropeanSpec())
@@ -276,7 +319,8 @@ def test_resolve_swaption_black76_inputs_preserves_legacy_single_timeline_fallba
     legacy = resolve_swaption_black76_inputs(market_state, _EuropeanCurveSpec())
     explicit = resolve_swaption_black76_inputs(market_state, _ExplicitLegacyEquivalent())
 
-    assert legacy == explicit
+    assert legacy.forward_swap_rate == pytest.approx(explicit.forward_swap_rate, abs=1e-15)
+    assert replace(legacy, forward_swap_rate=explicit.forward_swap_rate) == explicit
 
 
 def test_price_swaption_black76_raw_receiver_branch_matches_black76_put():

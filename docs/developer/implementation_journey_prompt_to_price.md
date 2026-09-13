@@ -124,6 +124,17 @@ contractual cash/physical settlement, delivery lifecycle, stochastic basis, or
 production calibration coverage. Its semantic product and obligation record
 only the positive payer underlying-swap NPV at exercise, discounted to valuation;
 they do not assert a cash-settlement method.
+The semantic timeline explicitly has no settlement dates. Family lowering
+retains the exercise-value obligation as a valuation event on the exercise
+decision date; neither family nor DSL signatures advertise a settlement role.
+This distinction survives method specialization and the Monte Carlo event
+projection. Ordinary contractual settlement obligations retain their existing
+settlement timeline semantics.
+Dictionary/YAML parsing hydrates explicit event machines, including their
+nested guards, actions, and ordered parameters, instead of leaving raw mappings
+in the typed contract. Malformed explicit machines fail rather than silently
+regenerating a different lifecycle; serialized exercise-value contracts retain
+the same strict validation as in-memory objects.
 T73's replay seed is taken from
 `cross_validate.target_contracts.hw_mc.spec_overrides.seed`, the same seed
 executed by its sole Monte Carlo target; generic task or market defaults cannot

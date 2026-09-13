@@ -888,6 +888,8 @@ def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():
     assert swaption["swap_end"] == date(2030, 11, 15)
     assert swaption["swap_frequency"] is Frequency.SEMI_ANNUAL
     assert swaption["day_count"] is DayCountConvention.THIRTY_E_360
+    assert swaption["float_frequency"] is Frequency.QUARTERLY
+    assert swaption["float_day_count"] is DayCountConvention.THIRTY_E_360
     assert swaption["is_payer"] is True
 
     cds = benchmark_spec_overrides(tasks["F007"], root=ROOT)

@@ -1336,6 +1336,9 @@ def _swaption_overrides(
         "swap_end": maturity_date,
         "swap_frequency": _frequency(contract.get("fixed_frequency")),
         "day_count": _day_count(contract.get("fixed_day_count")),
+        "float_frequency": _frequency(contract.get("float_frequency")),
+        "float_day_count": _day_count(contract.get("float_day_count")),
+        "model_time_day_count": _day_count(contract.get("model_time_day_count")),
         "rate_index": (
             scenario_contract.forecast_curve_name
             if scenario_contract is not None and scenario_contract.forecast_curve_name
@@ -1347,11 +1350,6 @@ def _swaption_overrides(
         overrides.update(
             {
                 "valuation_date": _parse_date(contract.get("settle_date")),
-                "float_frequency": _frequency(contract.get("float_frequency")),
-                "float_day_count": _day_count(contract.get("float_day_count")),
-                "model_time_day_count": _day_count(
-                    contract.get("model_time_day_count")
-                ),
                 "rate_index": contract.get("rate_index"),
                 "exercise_value_convention": contract.get("exercise_value_convention"),
                 "valuation_measure": contract.get("valuation_measure"),

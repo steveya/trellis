@@ -1295,6 +1295,47 @@ def test_admitted_swaption_adapter_composes_resolved_inputs_with_raw_kernel():
     assert "price_swaption_black76(market_state" not in source
 
 
+@pytest.mark.parametrize("authored_clock", [None, "ACT/365"])
+def test_f006_generated_black_swaption_preserves_ordinary_leg_conventions(monkeypatch, authored_clock):
+    from copy import deepcopy
+    from trellis.agent.benchmark_contracts import benchmark_spec_overrides
+    from trellis.agent.executor import _generate_skeleton, _make_test_payoff, _materialize_deterministic_exact_binding_module
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state_for_task
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.models.calibration.rates import build_swaption_leg_timelines
+
+    task = deepcopy(next(task for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml") if task["id"] == "F006"))
+    assert "comparison_model_parameter_set" not in task["benchmark_contract"]
+    if authored_clock is not None:
+        task["benchmark_contract"]["model_time_day_count"] = authored_clock
+    plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.rate_style_swaption.price_swaption_black76_raw",),
+        primitive_plan=None, method="analytical", instrument_type="swaption",
+    )
+    skeleton = _generate_skeleton(STATIC_SPECS["swaption"], "European payer swaption", generation_plan=plan)
+    generated = _materialize_deterministic_exact_binding_module(skeleton, plan)
+    assert generated is not None
+    module = ModuleType("test_generated_f006_conventions")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(generated.code, module.__dict__)
+    market, _ = build_market_state_for_task(task)
+    payoff = _make_test_payoff(
+        module.SwaptionPayoff, STATIC_SPECS["swaption"], market.settlement,
+        market_state=market, spec_overrides=benchmark_spec_overrides(task),
+    )
+    spec = payoff.spec
+    assert spec.float_frequency is Frequency.QUARTERLY
+    assert spec.float_day_count is DayCountConvention.THIRTY_E_360
+    assert spec.model_time_day_count is (DayCountConvention.ACT_365 if authored_clock else None)
+    fixed, floating, clock = build_swaption_leg_timelines(spec, market)
+    assert len(fixed) == 10
+    assert len(floating) == 20
+    assert clock is (DayCountConvention.ACT_365 if authored_clock else DayCountConvention.THIRTY_E_360)
+    assert payoff.evaluate(market) > 0.0
+
+
 def test_deterministic_exact_binding_module_materializes_bermudan_lower_bound_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -7430,7 +7471,8 @@ def test_deterministic_exact_binding_module_composes_european_swaption_rate_latt
     assert "build_bermudan_swaption_lattice(" not in generated.code
 
 
-def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo():
+@pytest.mark.parametrize("explicit_leg_conventions", [False, True])
+def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo(monkeypatch, explicit_leg_conventions):
     from trellis.agent.codegen_guardrails import PrimitiveRef
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -7588,6 +7630,35 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
     assert "price_swaption_monte_carlo(" not in generated.code
     assert "resolve_swaption_monte_carlo_problem(" not in generated.code
     assert "GBM(" not in generated.code
+
+    from trellis.core.market_state import MarketState
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+    from trellis.models.vol_surface import FlatVol
+
+    module = ModuleType("test_generated_swaption_mc_legacy_clock")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(generated.code, module.__dict__)
+    payload_calls = []
+    def capture_payload(**kwargs):
+        payload_calls.append(kwargs)
+        return build_discounted_swap_pv_payload(**kwargs)
+    module.build_discounted_swap_pv_payload = capture_payload
+    module.price_event_aware_monte_carlo = lambda *args, **kwargs: {"price": 1.0}
+    spec = module.SwaptionSpec(
+        notional=100.0, strike=0.03, expiry_date=date(2025, 1, 31),
+        swap_start=date(2025, 1, 31), swap_end=date(2026, 1, 31),
+        swap_frequency=Frequency.MONTHLY, day_count=DayCountConvention.THIRTY_360,
+        model_time_day_count=DayCountConvention.THIRTY_360 if explicit_leg_conventions else None,
+    )
+    market = MarketState(
+        as_of=date(2024, 11, 15), settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.05), vol_surface=FlatVol(0.2),
+    )
+    assert module.SwaptionPayoff(spec).evaluate(market) == 1.0
+    assert len(payload_calls) == 1
+    assert (payload_calls[0]["floating_timeline"] is not None) is explicit_leg_conventions
 
 
 @pytest.mark.parametrize(

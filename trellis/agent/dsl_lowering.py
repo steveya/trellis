@@ -2445,6 +2445,8 @@ def _typed_settlement_rules(product) -> tuple[str, ...]:
     """Return typed settlement rules emitted by obligations, deduplicated in order."""
     rules: list[str] = []
     for obligation in getattr(product, "obligations", ()) or ():
+        if getattr(obligation, "settlement_kind", "") == "valuation":
+            continue
         rule = str(getattr(obligation, "settle_date_rule", "")).strip()
         if rule and rule not in rules:
             rules.append(rule)
