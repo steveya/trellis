@@ -294,13 +294,14 @@ def test_rate_style_swaption_monte_carlo_compiles_to_event_aware_family_ir():
     )
 
 
-def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
+@pytest.mark.parametrize("instrument_class", ["cap", "floor"])
+def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir(instrument_class):
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_period_rate_option_strip_contract
 
     contract = make_period_rate_option_strip_contract(
-        description="Black floorlet strip vs Hull-White Monte Carlo",
-        instrument_class="floor",
+        description="Uninformative rate strip label",
+        instrument_class=instrument_class,
         observation_schedule=("floor_schedule_placeholder",),
         preferred_method="monte_carlo",
     )
@@ -309,12 +310,18 @@ def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
     family_ir = blueprint.dsl_lowering.family_ir
     assert isinstance(family_ir, EventAwareMonteCarloIR)
     assert family_ir.route_id == "monte_carlo_paths"
-    assert family_ir.product_instrument == "floor"
+    assert family_ir.product_instrument == instrument_class
     assert family_ir.payoff_family == "period_rate_option_strip"
-    assert family_ir.state_spec.state_variable == "short_rate"
-    assert family_ir.process_spec.process_family == "hull_white_1f"
+    assert family_ir.state_spec.state_variable == "forward_rate"
+    assert family_ir.process_spec.process_family == "independent_lognormal_forward_marginals"
+    assert family_ir.process_spec.simulation_scheme == "exact_lognormal"
+    assert family_ir.process_spec.process_tags == ("antithetic", "no_joint_forward_process")
     assert family_ir.helper_symbol == "price_rate_cap_floor_strip_monte_carlo"
-    assert family_ir.path_requirement_spec.requirement_kind == "event_replay"
+    assert family_ir.path_requirement_spec.requirement_kind == "independent_fixing_marginals"
+    assert family_ir.path_requirement_spec.replay_mode == "independent_periods"
+    assert family_ir.path_requirement_spec.stored_fields == ("forward_rate",)
+    assert family_ir.measure_spec.measure_family == "period_payment_forward"
+    assert family_ir.measure_spec.numeraire_binding == "payment_date_discount_factor"
     assert family_ir.payoff_reducer_spec.reducer_kind == "period_option_cashflow_strip"
     assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc"
 

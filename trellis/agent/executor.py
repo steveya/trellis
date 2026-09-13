@@ -3843,6 +3843,11 @@ def _make_test_payoff(
         # values would turn a plain cap into a different, unsupported product.
         for field in spec_schema.fields:
             if field.default is not None:
+                # The shared schema makes strike optional for collars, but a
+                # plain unstructured cap/floor still needs its smoke strike.
+                # Authored strikes keep their hydrated dataclass default.
+                if field.name == "strike" and field.default == "None":
+                    continue
                 name_defaults.pop(field.name, None)
 
     description = getattr(payoff_cls, "__doc__", "") or getattr(module, "__doc__", "") or ""

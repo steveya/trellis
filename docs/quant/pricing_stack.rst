@@ -1300,7 +1300,10 @@ expiry, accrual, payment discount and Black volatility as the analytical
 leg. The 0.5% tolerance is a relative error in holder present value. This
 proof does not simulate a short-rate path or assert a joint model for
 caplet forwards; cross-caplet dependence is unnecessary for this linear
-sum of individual option expectations. It does not validate calibration,
+sum of individual option expectations. The compiler's Monte Carlo family IR
+records scalar forward rates, exact lognormal antithetic sampling, and
+independent period-payment-forward expectations, not Hull-White/OU dynamics.
+It does not validate calibration,
 shifted/normal volatility, seasoned fixings or production holiday rules.
 
 Below those public callable wrappers, the reusable coupon/event/control layer

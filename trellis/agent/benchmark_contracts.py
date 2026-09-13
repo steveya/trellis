@@ -926,6 +926,7 @@ def _benchmark_detail_lines(
             lines.append(f"Day count: {contract['day_count']}.")
         for field in (
             "model_time_day_count", "discount_curve_day_count", "forecast_curve_day_count",
+            "valuation_measure", "output_unit", "output_currency",
             "calendar_name", "business_day_adjustment",
             "fixing_rule", "payment_rule", "fixing_lag_days", "payment_lag_days",
             "mc_distribution", "sampling", "n_paths", "seed",

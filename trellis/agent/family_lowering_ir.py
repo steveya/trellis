@@ -853,7 +853,7 @@ _TRANSFORM_MARKET_MAPPINGS = {
 
 _MC_MARKET_MAPPINGS = {
     ("hull_white_1f", "swaption"): "discount_curve_forward_curve_black_vol_to_short_rate_mc",
-    ("hull_white_1f", "period_rate_option_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
+    ("independent_lognormal_forward_marginals", "period_rate_option_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
     ("heston", "vanilla_option"): "heston_model_parameters_to_stochastic_vol_mc",
     ("local_vol_1d", ""): "equity_spot_discount_local_vol_to_mc",
     ("gbm_1d", ""): "equity_spot_discount_black_vol_to_mc",
@@ -862,7 +862,7 @@ _MC_MARKET_MAPPINGS = {
 
 _MC_HELPER_BINDINGS = {
     ("heston", "vanilla_option", "european"): "price_heston_option_monte_carlo",
-    ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
+    ("independent_lognormal_forward_marginals", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
 }
 
 
@@ -1950,8 +1950,14 @@ def _build_event_aware_monte_carlo_ir(
         payoff_reducer_spec=payoff_reducer_spec,
         control_spec=control_spec,
         measure_spec=MCMeasureSpec(
-            measure_family="risk_neutral",
-            numeraire_binding="discount_curve",
+            measure_family=(
+                "period_payment_forward" if _mc_uses_forward_marginal_strip(product)
+                else "risk_neutral"
+            ),
+            numeraire_binding=(
+                "payment_date_discount_factor" if _mc_uses_forward_marginal_strip(product)
+                else "discount_curve"
+            ),
         ),
         event_timeline=event_timeline,
         event_specs=tuple(
@@ -1962,6 +1968,16 @@ def _build_event_aware_monte_carlo_ir(
         helper_symbol=_mc_helper_symbol_for_product(product, process_spec),
         market_mapping=_mc_market_mapping_for_product(product, process_spec),
         compatibility_wrapper="",
+    )
+
+
+def _mc_uses_forward_marginal_strip(product) -> bool:
+    """Identify the cap/floor helper, which samples no short-rate or joint path."""
+    return (
+        getattr(product, "semantic_id", "") == "period_rate_option_strip"
+        and getattr(product, "payoff_family", "") == "period_rate_option_strip"
+        and getattr(product, "instrument_class", "") in {"cap", "floor"}
+        and getattr(product, "exercise_style", "") == "none"
     )
 
 
@@ -1995,6 +2011,13 @@ def _mc_control_spec_for_product(product) -> MCControlSpec | None:
 
 def _mc_state_spec_for_product(product) -> MCStateSpec:
     """Infer the bounded Monte Carlo state contract from semantic metadata."""
+    if _mc_uses_forward_marginal_strip(product):
+        return MCStateSpec(
+            state_variable="forward_rate",
+            dimension=1,
+            state_tags=("independent_fixing_marginals",),
+            state_layout="scalar",
+        )
     model_family = str(getattr(product, "model_family", "") or "").strip().lower()
     state_tags = _tuple_unique(("terminal_markov", *_state_tags(product)))
     if model_family in {"interest_rate", "short_rate"}:
@@ -2028,6 +2051,12 @@ def _mc_process_spec_for_product(
     route_id: str,
 ) -> MCProcessSpec:
     """Infer the bounded Monte Carlo process contract from semantic metadata."""
+    if _mc_uses_forward_marginal_strip(product):
+        return MCProcessSpec(
+            process_family="independent_lognormal_forward_marginals",
+            simulation_scheme="exact_lognormal",
+            process_tags=("antithetic", "no_joint_forward_process"),
+        )
     if _binding_has_symbol(binding_spec, "state_process", "LocalVol") or _binding_has_symbol(
         binding_spec,
         "pricing_kernel",
@@ -2244,6 +2273,14 @@ def _mc_path_requirement_spec_for_product(
     event_timeline: tuple[MCEventTimeSpec, ...],
 ) -> MCPathRequirementSpec:
     """Infer the reduced-state contract needed by the bounded MC family."""
+    if _mc_uses_forward_marginal_strip(product):
+        return MCPathRequirementSpec(
+            requirement_kind="independent_fixing_marginals",
+            snapshot_schedule_role="observation_dates",
+            reducer_kinds=_mc_reducer_kinds_for_product(product),
+            replay_mode="independent_periods",
+            stored_fields=("forward_rate",),
+        )
     if event_timeline:
         requirement_kind = "event_replay"
         replay_mode = "deterministic_timeline"

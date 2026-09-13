@@ -37,6 +37,27 @@ def test_e22_authored_contract_is_admitted_and_title_independent():
     )
 
 
+@pytest.mark.parametrize(
+    "loader_name",
+    ["load_stress_task_manifest", "load_binding_first_exotic_proof_manifest"],
+)
+def test_e22_eval_manifests_keep_authored_target_and_reference_names(loader_name):
+    from trellis.agent import evals
+
+    expectation = getattr(evals, loader_name)()["E22"]
+    assert expectation["comparison_targets"] == ["analytical", "monte_carlo"]
+    assert expectation["reference_target"] == "analytical"
+
+
+def test_e22_structured_description_carries_authored_output_terms():
+    from trellis.agent.task_runtime import task_to_description
+
+    task = _task()
+    description = task_to_description(task)
+    for field in ("valuation_measure", "output_unit", "output_currency"):
+        assert f"{field}: {task['benchmark_contract'][field]}." in description
+
+
 def test_e22_structured_bridge_and_method_rebuild_preserve_the_contract(monkeypatch):
     from trellis.agent.semantic_contracts import specialize_semantic_contract_for_method
     from trellis.agent.task_runtime import (
@@ -88,18 +109,27 @@ def test_e22_generated_schema_keeps_explicit_schedule_and_controls():
     compile(generated, "<E22 skeleton>", "exec")
 
 
-def test_cap_strip_smoke_fixture_does_not_invent_callable_or_collar_terms():
+@pytest.mark.parametrize("instrument_class", ["cap", "floor"])
+def test_cap_strip_smoke_fixture_preserves_plain_cap_floor_terms(instrument_class):
     from trellis.agent.executor import _generate_skeleton, _make_test_payoff
     from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_runtime import build_market_state_for_task
+    from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
 
     schema = STATIC_SPECS["period_rate_option_strip"]
     namespace = {}
-    exec(_generate_skeleton(schema, "Non-callable cap"), namespace)
+    exec(_generate_skeleton(schema, f"Plain {instrument_class}"), namespace)
     payoff = _make_test_payoff(namespace[schema.class_name], schema, date(2024, 11, 15))
     assert payoff._spec.call_price is None
     assert payoff._spec.exercise_dates is None
     assert payoff._spec.cap_strike is None
     assert payoff._spec.floor_strike is None
+    market, _ = build_market_state_for_task(_task())
+    price = price_rate_cap_floor_strip_analytical(
+        market, payoff._spec, instrument_class=instrument_class
+    )
+    assert payoff._spec.strike == 0.05
+    assert price > 0.0
 
 
 def test_e22_admits_materialized_market_and_rejects_market_override():
@@ -311,6 +341,16 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
 
     task = {**_task(), "title": "Uninformative label"}
     observed = []
+    compiled_metadata = {}
+    materialize = executor._materialize_deterministic_exact_binding_module
+
+    def observed_materialize(skeleton, generation_plan, **kwargs):
+        target = kwargs.get("comparison_target")
+        if target:
+            compiled_metadata[target] = platform_requests._semantic_blueprint_summary(
+                kwargs["semantic_blueprint"]
+            )
+        return materialize(skeleton, generation_plan, **kwargs)
 
     def observed_price(payoff, market):
         observed.append((payoff._spec, market.settlement))
@@ -326,6 +366,9 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
     monkeypatch.setattr(executor, "TRELLIS_PACKAGE_ROOT", tmp_path / "trellis")
     monkeypatch.setattr(executor, "_REPO_REVISION", "test")
     monkeypatch.setattr(executor, "write_module", write_generated_module)
+    monkeypatch.setattr(
+        executor, "_materialize_deterministic_exact_binding_module", observed_materialize
+    )
     monkeypatch.setattr(
         analytical_traces, "TRACE_ROOT", tmp_path / "traces" / "analytical"
     )
@@ -363,6 +406,17 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
     assert result["attempts"] == 0
     assert result["token_usage_summary"]["call_count"] == 0
     assert result["instrument_type"] == "cap"
+    assert set(compiled_metadata) == {"analytical", "monte_carlo"}
+    mc_ir = compiled_metadata["monte_carlo"]["dsl_family_ir"]
+    assert mc_ir["state_spec"]["state_variable"] == "forward_rate"
+    assert mc_ir["process_spec"] == {
+        "process_family": "independent_lognormal_forward_marginals",
+        "simulation_scheme": "exact_lognormal",
+        "process_tags": ["antithetic", "no_joint_forward_process"],
+    }
+    assert mc_ir["path_requirement_spec"]["requirement_kind"] == "independent_fixing_marginals"
+    assert mc_ir["measure_spec"]["measure_family"] == "period_payment_forward"
+    assert mc_ir["helper_symbol"] == "price_rate_cap_floor_strip_monte_carlo"
     assert result["runtime_contract"]["simulation_seed"] == 42
     assert (
         result["runtime_contract"]["simulation_identity"]["seed_source"]
