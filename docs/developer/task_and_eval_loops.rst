@@ -144,6 +144,16 @@ still fail closed.
 Typed Comparison Target Lifecycle
 ---------------------------------
 
+Legacy admission validates an authored ``target_tolerances_pct`` map with the
+same deterministic target/reference plan used by execution. Every comparator
+must have an allowance unless an explicit global ``tolerance_pct`` supplies
+the fallback; unknown targets and references, malformed values, and incomplete
+coverage fail before market construction or building. A ``validation_policy``
+label does not waive an invalid explicit map. Analytical reference declarations
+and construct-only target lists use the same resolution rules at both boundaries.
+Rows without a per-target map retain their existing acceptance behavior; removing
+the legacy no-map 5% fallback is separately tracked by QUA-1252.
+
 Manifest-declared pricing blocks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

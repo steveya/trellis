@@ -2688,14 +2688,38 @@ def _has_percentage_tolerance(value: Any) -> bool:
     return _finite_non_negative_number(tolerance)
 
 
-def _has_target_percentage_tolerances(value: Any) -> bool:
+def _has_target_percentage_tolerances(task: Mapping[str, Any]) -> bool:
+    value = task.get("cross_validate")
     if not isinstance(value, Mapping):
         return False
     tolerances = value.get("target_tolerances_pct")
-    return bool(tolerances) and isinstance(tolerances, Mapping) and all(
+    if not isinstance(tolerances, Mapping) or not all(
         _text(target_id) and _finite_non_negative_number(tolerance)
         for target_id, tolerance in tolerances.items()
-    )
+    ):
+        return False
+    if "tolerance_pct" in value and not _has_percentage_tolerance(value):
+        return False
+    construct = task.get("construct")
+    if construct is not None and not (
+        isinstance(construct, str)
+        or (
+            isinstance(construct, Sequence)
+            and not isinstance(construct, bytes)
+            and all(isinstance(method, str) for method in construct)
+        )
+    ):
+        return False
+    # Reuse execution's deterministic target/reference resolution, including
+    # analytical references and construct-only comparisons. A policy label
+    # cannot waive an explicitly malformed or incomplete tolerance map.
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    try:
+        plan = build_comparison_harness_plan(task)
+    except (TypeError, ValueError):
+        return False
+    return bool(plan.targets)
 
 
 def _has_absolute_relative_tolerance(value: Any) -> bool:
@@ -2708,11 +2732,17 @@ def _has_absolute_relative_tolerance(value: Any) -> bool:
 
 
 def _has_acceptance_contract(task: Mapping[str, Any]) -> bool:
+    cross_validate = task.get("cross_validate")
+    has_target_tolerances = (
+        isinstance(cross_validate, Mapping)
+        and "target_tolerances_pct" in cross_validate
+    )
+    if has_target_tolerances and not _has_target_percentage_tolerances(task):
+        return False
     if _text(task.get("validation_policy")):
         return True
-    cross_validate = task.get("cross_validate")
-    if _has_percentage_tolerance(cross_validate) or _has_target_percentage_tolerances(
-        cross_validate
+    if _has_percentage_tolerance(cross_validate) or (
+        has_target_tolerances and bool(cross_validate["target_tolerances_pct"])
     ):
         return True
     if isinstance(cross_validate, Mapping):

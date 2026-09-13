@@ -1363,6 +1363,124 @@ def test_validated_legacy_expected_honest_block_is_admitted_for_runtime():
     assert_executable_task_selection([_legacy_expected_block_task()])
 
 
+def _generic_legacy_comparison_task():
+    task = _authored_legacy_swaption_task()
+    task.update(id="T900", title="Generic authored comparison")
+    task.pop("validation_policy")
+    return task
+
+
+@pytest.mark.parametrize("has_validation_policy", (False, True))
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 0.1}},
+        {"target_tolerances_pct": {"hw_tree": 0.1}},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0, "unknown": 1.0}},
+        {"target_tolerances_pct": {"unknown": 1.0}, "tolerance_pct": 1.0},
+        {"target_tolerances_pct": {}},
+        {"target_tolerances_pct": None},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}, "reference_target": "unknown"},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": True}},
+    ),
+)
+def test_generic_legacy_target_tolerance_drift_fails_admission(
+    acceptance, has_validation_policy
+):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError, assert_executable_task_selection,
+    )
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"].update(acceptance)
+    if has_validation_policy:
+        task["validation_policy"] = "invariants_and_cross_method"
+
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        assert_executable_task_selection([task])
+
+
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}},
+        {"target_tolerances_pct": {"black76": 0.1}, "tolerance_pct": 3.0},
+        {"target_tolerances_pct": {}, "tolerance_pct": 3.0},
+    ),
+)
+def test_generic_legacy_admission_matches_runtime_tolerance_coverage(acceptance):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"].update(acceptance)
+
+    assert_executable_task_selection([task])
+    plan = build_comparison_harness_plan(task)
+    assert plan.reference_target == "hw_tree"
+    assert dict(plan.target_tolerances_pct) == acceptance["target_tolerances_pct"]
+    assert plan.tolerance_pct == acceptance.get("tolerance_pct")
+
+
+@pytest.mark.parametrize("has_validation_policy", (False, True))
+@pytest.mark.parametrize("construct", (["rate_tree", 7], [None], 42, {"rate_tree": 1}))
+def test_generic_target_tolerance_admission_rejects_malformed_construct(
+    construct, has_validation_policy
+):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError, assert_executable_task_selection,
+    )
+
+    task = _generic_legacy_comparison_task()
+    task["construct"] = construct
+    if has_validation_policy:
+        task["validation_policy"] = "invariants_and_cross_method"
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        assert_executable_task_selection([task])
+
+
+@pytest.mark.global_workflow
+def test_incomplete_target_tolerances_stop_before_market_or_build(monkeypatch, tmp_path):
+    from scripts import run_tasks
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"]["target_tolerances_pct"].pop("hw_mc")
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append("unexpected execution")
+        pytest.fail("invalid tolerance coverage must fail before execution")
+
+    monkeypatch.setattr(run_tasks, "build_market_state", forbidden)
+    monkeypatch.setattr(run_tasks, "run_task", forbidden)
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        run_tasks.run_block([task], str(tmp_path / "results.json"))
+    assert calls == []
+    assert not (tmp_path / "results.json").exists()
+
+
+@pytest.mark.parametrize(
+    "comparison,reference",
+    (
+        ({"internal": ["hw_tree", "hw_mc"], "analytical": "black76",
+          "target_tolerances_pct": {"hw_tree": 0.1, "hw_mc": 3.0}}, "black76"),
+        ({"reference_target": "rate_tree",
+          "target_tolerances_pct": {"analytical": 0.1, "monte_carlo": 3.0}}, "rate_tree"),
+        ({"internal": ["black76", "hw_tree", "hw_mc"], "reference": "hw_tree",
+          "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}}, "hw_tree"),
+    ),
+)
+def test_generic_tolerance_admission_reuses_runtime_reference_resolution(comparison, reference):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"] = comparison
+    assert_executable_task_selection([task])
+    assert build_comparison_harness_plan(task).reference_target == reference
+
+
 @pytest.mark.parametrize("task_id", ("T30", "T96"))
 def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
