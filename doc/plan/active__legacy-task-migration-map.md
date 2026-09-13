@@ -22,6 +22,11 @@ effective dates, while the checked callable-bond routes accept only one scalar
 fixed coupon. `QUA-1251` owns the missing variable-coupon primitive and an
 authored T09 schedule.
 
+`QUA-1258` authors `T89` on the same named fixed-coupon fixture as T02/T17.
+It requires constant-zero-OAS effective duration and the same-payoff parallel
+duration reference in years at symmetric 25 bp shocks. This internal identity
+does not claim an independent oracle or market-price OAS calibration.
+
 T03, T83, and T85 no longer cite resolved limitations as blockers. Their
 manifest dispositions now match this map: T03 is a `research_hold` pending
 a reproducible lattice experiment, T83 is a `proof_hold` pending an authored
@@ -119,7 +124,7 @@ remain outside executable pricing selection.
 | `T86` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Theta (time decay) for options via tree and PDE |
 | `T87` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Rho (rate sensitivity) for equity options |
 | `T88` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Book P&L attribution: rate + spread + vol decomposition |
-| `T89` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | OAS duration (spread duration) for callable bonds |
+| `T89` | `named_proof_fixture` | `TASKS_PROOF_LEGACY.yaml` | Callable effective duration: constant-zero-OAS same-payoff identity |
 | `T90` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Vega surface: per-expiry per-strike vega bucketing |
 | `T94` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign curve selection |
 | `T95` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | xVA framework: CVA + DVA + FVA on IR swap portfolio |

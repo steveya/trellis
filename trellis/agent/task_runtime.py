@@ -1542,7 +1542,7 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             option_type="put",
         )
 
-    if task_id in {"T02", "T17"}:
+    if task_id in {"T02", "T17", "T89"}:
         from trellis.agent.semantic_contracts import make_callable_bond_contract
 
         contract = task.get("benchmark_contract")
@@ -2302,7 +2302,11 @@ def run_task(
 ) -> dict:
     """Execute one task with separate artifact-freshness and source-origin policy."""
     assert_executable_task_disposition([task])
-    if str(task.get("task_kind") or "").strip() == "fpml_conformance":
+    is_t89_duration_proof = str(task.get("id") or "").strip() == "T89"
+    if (
+        str(task.get("task_kind") or "").strip() == "fpml_conformance"
+        and not is_t89_duration_proof
+    ):
         from trellis.agent.fpml_conformance import run_fpml_conformance_task
 
         market_state, _market_context = build_market_state_for_task(task, market_state)
@@ -2438,6 +2442,14 @@ def run_task(
         result_data["llm_cassette"] = llm_cassette_payload
 
     try:
+        if is_t89_duration_proof:
+            from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+            # The reserved ID, not mutable provenance labels, identifies this
+            # proof. Direct callers cannot remove its required-output contract.
+            assert_executable_task_selection([{
+                **task, "task_definition_manifest": "TASKS_PROOF_LEGACY.yaml",
+            }])
         expected_honest_block = _expected_honest_block_for_task(task)
         if expected_honest_block is not None:
             raise ExpectedTaskHonestBlock(expected_honest_block)
@@ -5031,6 +5043,8 @@ def _cross_validate_comparison_task(
     priced: dict[str, float] = {}
     outputs: dict[str, dict[str, float]] = {}
     output_errors: dict[str, str] = {}
+    output_metadata: dict[str, dict[str, Any]] = {}
+    analytics_contract = configured_targets.get("analytics_contract")
     output_tolerances = {
         str(name): float(tolerance)
         for name, tolerance in dict(
@@ -5129,7 +5143,7 @@ def _cross_validate_comparison_task(
                 continue
             try:
                 target_outputs: dict[str, float] = {}
-                if output_tolerances:
+                if output_tolerances and analytics_contract is None:
                     benchmark_outputs_fn = getattr(payoff, "benchmark_outputs", None)
                     if callable(benchmark_outputs_fn):
                         try:
@@ -5143,7 +5157,38 @@ def _cross_validate_comparison_task(
                         except Exception as exc:
                             output_errors[target.target_id] = str(exc)
                 if "price" not in target_outputs:
-                    target_outputs["price"] = float(price_fn(payoff, market_state))
+                    raw_price = price_fn(payoff, market_state)
+                    if analytics_contract is not None:
+                        from trellis.agent.task_analytics import validated_callable_anchor_price
+
+                        target_outputs["price"] = validated_callable_anchor_price(raw_price)
+                    else:
+                        target_outputs["price"] = float(raw_price)
+                if analytics_contract is not None:
+                    from trellis.agent.task_analytics import (
+                        evaluate_comparison_analytics,
+                        validated_comparison_analytics_values,
+                    )
+
+                    # Required analytics are computed here, not inferred from
+                    # equal prices or untyped adapter benchmark outputs.
+                    for name in output_tolerances:
+                        target_outputs.pop(name, None)
+                    try:
+                        analytics_payload = evaluate_comparison_analytics(
+                            payoff, market_state, target_id=target.target_id,
+                            contract=analytics_contract,
+                            anchor_price=target_outputs["price"],
+                        )
+                        values, metadata = validated_comparison_analytics_values(
+                            analytics_payload, target_id=target.target_id,
+                            contract=analytics_contract,
+                            anchor_price=target_outputs["price"],
+                        )
+                        target_outputs.update(values)
+                        output_metadata[target.target_id] = metadata
+                    except Exception as exc:
+                        output_errors[target.target_id] = str(exc)
                 priced[target.target_id] = float(target_outputs["price"])
                 outputs[target.target_id] = target_outputs
             except Exception as exc:
@@ -5244,7 +5289,10 @@ def _cross_validate_comparison_task(
                     / denominator
                     * 100.0
                 )
-                output_deviations[target_id] = round(deviation_pct, 4)
+                output_deviations[target_id] = (
+                    deviation_pct if analytics_contract is not None
+                    else round(deviation_pct, 4)
+                )
                 if abs(values[target_id] - output_reference_value) <= tolerance_amount:
                     output_passed_targets.append(target_id)
                 else:
@@ -5267,6 +5315,11 @@ def _cross_validate_comparison_task(
             "failed_targets": output_failed_targets,
             "missing_targets": missing_targets,
         }
+        if analytics_contract is not None:
+            output_validation[output_name].update({
+                "output_unit": analytics_contract["output_unit"],
+                "tolerance_unit": analytics_contract["tolerance_unit"],
+            })
 
     output_validation_failed = any(
         report["status"] != "passed" for report in output_validation.values()
@@ -5303,6 +5356,12 @@ def _cross_validate_comparison_task(
                 "value": report["values"].get(target_id),
                 "deviation_pct": report["deviations_pct"].get(target_id),
             }
+            if analytics_contract is not None:
+                output_acceptance[output_name].update({
+                    "output_unit": report["output_unit"],
+                    "tolerance_unit": report["tolerance_unit"],
+                    "metadata": output_metadata.get(target_id, {}).get(output_name),
+                })
         output_statuses = {
             report["status"] for report in output_acceptance.values()
         }
@@ -5369,6 +5428,7 @@ def _cross_validate_comparison_task(
         "prices": priced,
         "outputs": outputs,
         "output_errors": output_errors,
+        "output_metadata": output_metadata,
         "output_validation": output_validation,
         "price_errors": price_errors,
         "artifact_coherence": artifact_coherence,

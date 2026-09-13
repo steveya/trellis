@@ -1562,7 +1562,7 @@ def _validate_legacy_task(
             )
         )
 
-    if task_id in {"T02", "T17"}:
+    if task_id in {"T02", "T17", "T89"}:
         issues.extend(
             _validate_legacy_callable_bond_comparison_contract(
                 manifest_name,
@@ -1652,7 +1652,7 @@ def _validate_legacy_callable_bond_comparison_contract(
     *,
     root: Path | None = None,
 ) -> list[TaskManifestIssue]:
-    """Keep T02/T17 on one exact, reusable fixed-coupon proof fixture."""
+    """Keep callable price/duration proofs on one exact, reusable fixture."""
     task_id = _text(task.get("id"))
     contract = task.get("benchmark_contract")
     cross_validate = task.get("cross_validate")
@@ -1748,6 +1748,48 @@ def _validate_legacy_callable_bond_comparison_contract(
                 },
             },
             "external": ["financepy", "quantlib"],
+        }
+    elif task_id == "T89":
+        from trellis.agent.task_analytics import callable_duration_contract
+
+        expected_description = (
+            "Compare OASDuration with no market-price anchor and Duration on the named "
+            "USD fixed-coupon callable-bond proof fixture using the same Hull-White "
+            "tree. Hold OAS at zero and use symmetric 25 bp parallel discount-zero-rate "
+            "shifts, with current callable holder PV as denominator. Require effective "
+            "duration in years under the authored relative-duration tolerance; this is "
+            "a same-payoff same-model identity, not an independent oracle."
+        )
+        expected_construct = "lattice"
+        duration_target = {
+            "method": "rate_tree",
+            "route_id": "exercise_lattice",
+            "route_family": "rate_lattice",
+            "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+            "variant_parameters": {
+                "lattice_model": "hull_white",
+                "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+                "mean_reversion": 0.1,
+                "sigma": 0.01,
+                "tree_steps": 200,
+            },
+            **common_target,
+            "equivalence_group": "t89_same_callable_hull_white_payoff",
+        }
+        expected_cross_validate = {
+            "internal": ["oas_bump_duration", "same_payoff_parallel_duration"],
+            "reference_target": "same_payoff_parallel_duration",
+            "relations": {"oas_bump_duration": "within_tolerance"},
+            "tolerance_pct": 0.000001,
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "output_tolerances_pct": {"effective_duration": 0.000001},
+            "analytics_contract": callable_duration_contract(),
+            "target_contracts": {
+                target_id: dict(duration_target)
+                for target_id in ("oas_bump_duration", "same_payoff_parallel_duration")
+            },
         }
     else:
         expected_description = (
@@ -1875,6 +1917,7 @@ def _validate_legacy_callable_bond_comparison_contract(
 
     valid = all(
         (
+            task_id != "T89" or _text(task.get("task_kind")) in {"", "pricing"},
             _text(task.get("task_disposition")) == "named_proof_fixture",
             _text(task.get("proof_fixture_id"))
             == "usd_fixed_coupon_callable_bond_5pct_2025_2035_v1",
@@ -1909,7 +1952,7 @@ def _validate_legacy_callable_bond_comparison_contract(
         _issue(
             manifest_name,
             "legacy.callable_bond_invalid_contract",
-            "T02/T17 require the exact named fixed-coupon callable-bond proof contract",
+            "T02/T17/T89 require the exact named fixed-coupon callable-bond proof contract",
             task_id=task_id,
             path=path,
         )

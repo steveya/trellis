@@ -1611,15 +1611,68 @@ tasks:
     analytical: attribution_identity
   status: pending
 - id: T89
-  title: OAS duration (spread duration) for callable bonds
-  construct: analytics
+  title: 'Callable effective duration: constant-zero-OAS same-payoff identity'
+  description: >-
+    Compare OASDuration with no market-price anchor and Duration on the named
+    USD fixed-coupon callable-bond proof fixture using the same Hull-White
+    tree. Hold OAS at zero and use symmetric 25 bp parallel discount-zero-rate
+    shifts, with current callable holder PV as denominator. Require effective
+    duration in years under the authored relative-duration tolerance; this is
+    a same-payoff same-model identity, not an independent oracle.
+  task_disposition: named_proof_fixture
+  proof_fixture_id: usd_fixed_coupon_callable_bond_5pct_2025_2035_v1
+  market_scenario_id: usd_callable_fixed_5pct_proof
+  validation_policy: invariants_and_cross_method
+  construct: lattice
   new_component: oas_duration
   cross_validate:
     internal:
     - oas_bump_duration
-    - modified_duration
-    external:
-    - quantlib
+    - same_payoff_parallel_duration
+    reference_target: same_payoff_parallel_duration
+    relations: {oas_bump_duration: within_tolerance}
+    tolerance_pct: 0.000001
+    tolerance_unit: percent_of_reference_price
+    output_unit: currency_amount
+    output_currency: USD
+    output_tolerances_pct: {effective_duration: 0.000001}
+    analytics_contract:
+      profile: callable_same_payoff_duration_v1
+      output_name: effective_duration
+      output_unit: years
+      tolerance_unit: percent_of_reference_duration
+      bump_bps: 25.0
+      market_price: null
+      constant_oas_bps: 0.0
+      risk_coordinate: parallel_continuously_compounded_discount_zero_rate
+      shock_convention: symmetric_up_down
+      denominator: 2_times_bump_decimal_times_current_callable_holder_pv
+      derivative_method: finite_difference
+      forward_policy: rederive_default_preserve_named_forecast_curves
+      model_policy: preserve_parameters_recalibrate_tree
+      reference_role: same_payoff_same_model_identity_not_independent_oracle
+      measures:
+        oas_bump_duration: OASDuration
+        same_payoff_parallel_duration: Duration
+    target_contracts:
+      oas_bump_duration: &t89_same_callable_hw_target
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
+        variant_parameters:
+          lattice_model: hull_white
+          model_parameter_set: callable_fixed_5pct_proof:hull_white
+          mean_reversion: 0.1
+          sigma: 0.01
+          tree_steps: 200
+        validation_bundle_id: rate_tree:callable_bond
+        payoff_family: callable_fixed_income
+        exercise_style: issuer_call
+        model_family: interest_rate
+        observation_style: exercise_schedule
+        equivalence_group: t89_same_callable_hull_white_payoff
+      same_payoff_parallel_duration: *t89_same_callable_hw_target
   status: pending
 - id: T90
   title: 'Vega surface: per-expiry per-strike vega bucketing'

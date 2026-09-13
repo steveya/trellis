@@ -394,6 +394,24 @@ analytics contract. Runtime ``Duration`` on this curve still reports
 and preserves the existing market model parameters. It does not make callable
 tree Greeks autodifferentiable or add bucket shocks or curve rebuilding.
 
+The retained ``T89`` proof compares ``OASDuration(market_price=None,
+bump_bps=25)`` with ``Duration(bump_bps=25)`` on the same fixed-coupon
+callable-bond economics and Hull-White tree (``a=0.1``, ``sigma=0.01``,
+200 steps). Both use the dated flat 5% USD discount curve and reprice the
+issuer-call decision after symmetric 25 bp shifts to continuously compounded
+discount zero rates. The default derived forward curve is regenerated;
+independently named forecast curves and explicit/named model parameters are
+preserved, and the tree is recalibrated to each shifted discount curve.
+
+``effective_duration`` is reported in years as
+``(PV_down - PV_up) / (2 * 0.0025 * current_callable_holder_PV)``. OAS remains
+zero: no market-price OAS solve is performed. The ``Duration`` lane must resolve
+to ``parallel_curve_bump`` (finite difference), not an autodiff result evaluated
+at a different shock scale. The reference ``same_payoff_parallel_duration`` is
+an internal same-payoff, same-model identity with relative tolerance
+``0.000001%`` of reference duration; it is not an independent pricing oracle,
+a market-price OAS calibration test, or a Vega proof.
+
 Product-Family Gradient Matrix
 ------------------------------
 
