@@ -1201,6 +1201,11 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
 
 def task_to_description(task: dict) -> str:
     """Convert a pricing-task entry into a pricing-build request string."""
+    if (
+        str(task.get("id") or "").strip() == "T82"
+        and task.get("task_disposition") == "proof_hold"
+    ):
+        return str(task.get("description") or "").strip()
     benchmark_description = benchmark_request_description(task, root=ROOT)
     if benchmark_description:
         return benchmark_description
@@ -1350,6 +1355,13 @@ def _bootstrap_rate_style_swaption_description(task: dict) -> str | None:
 
 def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
+    if (
+        str(task.get("id") or "").strip() == "T82"
+        and task.get("task_disposition") == "proof_hold"
+    ):
+        # Introspection preserves the authored hold rather than synthesizing a
+        # pricing prompt. Execution rejects this row before reaching this path.
+        return task_to_description(task)
     description = (
         benchmark_request_description(task, root=ROOT)
         or _bootstrap_ranked_observation_basket_description(task)
@@ -1542,7 +1554,7 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             option_type="put",
         )
 
-    if task_id in {"T02", "T17"}:
+    if task_id in {"T02", "T17", "T82"}:
         from trellis.agent.semantic_contracts import make_callable_bond_contract
 
         contract = task.get("benchmark_contract")

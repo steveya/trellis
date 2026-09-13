@@ -1505,17 +1505,51 @@ tasks:
   status: pending
 - id: T82
   title: 'Callable bond full analytics: vega, OAS, duration, scenarios'
+  description: >-
+    Retain the named USD fixed-coupon callable-bond fixture for the requested
+    vega, OAS, duration, and scenario analysis. Do not build or price T82 until
+    its missing analytics definitions and callable references are authored.
+  task_disposition: proof_hold
+  proof_fixture_id: usd_fixed_coupon_callable_bond_5pct_2025_2035_v1
+  market_scenario_id: usd_callable_fixed_5pct_proof
+  validation_policy: exact_nonpricing_hold
   construct:
   - analytics
   - lattice
   new_component: null
-  cross_validate:
-    internal:
-    - tree_bump_greeks
-    - straight_bond_greeks
-    external:
-    - quantlib
-  status: pending
+  disposition_reason: >-
+    T82 is a proof hold: the bond and market are authored, but OAS target price
+    and clean/dirty/holder-PV basis, volatility coordinate and bump, duration
+    definition and curve bump, scenario coordinates and ladder, required
+    outputs and units, acceptance tolerances, and callable-analytics references
+    are missing. Generic Vega moves the Black volatility surface, not the
+    explicit Hull-White sigma in this fixture. Straight-bond Greeks are not a
+    callable-analytics reference. Bounded duration, OAS-duration, and scenario
+    APIs exist; their existence does not supply these missing definitions.
+  missing_inputs:
+  - oas_target_price
+  - oas_price_basis_clean_dirty_or_holder_pv
+  - volatility_coordinate_and_units
+  - volatility_bump_size_and_units
+  - duration_definition
+  - duration_curve_coordinate_bump_size_and_units
+  - scenario_curve_coordinates
+  - scenario_ladder_and_bump_units
+  - required_analytics_outputs_and_units
+  - acceptance_metrics_and_tolerances
+  - callable_analytics_references
+  analytics_hold_contract:
+    requested_analytics: [vega, oas, duration, scenarios]
+    model_parameter_set: callable_fixed_5pct_proof:hull_white
+    missing_input_policy: requires_authored_values_no_defaults
+    vega_boundary:
+      generic_coordinate: black_vol_surface
+      fixture_coordinate: hull_white_sigma
+      generic_vega_is_model_sigma_vega: false
+    reference_policy: straight_bond_greeks_are_not_callable_analytics_reference
+    acceptance_policy: not_evaluated_while_held
+    execution_policy: zero_market_builder_llm_pricer_attempts
+  status: blocked
 - id: T83
   title: 'KRD: interpolation-aware bumping'
   construct: analytics

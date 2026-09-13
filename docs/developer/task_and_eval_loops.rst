@@ -172,6 +172,22 @@ dispositions may cross the executable task-selection boundary. Specialized
 default task collections must also omit governed holds; the analytical pricing
 stress set excludes T83 for this reason.
 
+T82 is an exact ``proof_hold``, not an executable honest-block certificate. It
+retains the shared fixed-coupon callable-bond fixture, its three issuer call
+dates, and the named market from T02/T17, but does not author the risk request.
+Its ``missing_inputs`` enumerate the OAS target price and clean/dirty/holder-PV
+basis, volatility coordinate and bump, duration definition and curve bump,
+scenario coordinates and ladder, outputs and units, acceptance tolerances,
+and callable-analytics references. ``analytics_hold_contract`` distinguishes
+generic Black-surface Vega from the fixture's explicit Hull-White sigma;
+straight-bond Greeks cannot serve as the missing callable reference.
+Both CLI selection and direct ``run_task(...)`` validate the exact hold before
+rejecting it with ``legacy.non_executable_disposition`` and its authored reason.
+There are zero market-construction, builder, LLM, or pricer attempts, and no
+pricing-result file is produced. Altered T82 hold/fixture fields instead fail
+with ``legacy.callable_analytics_hold_invalid_contract``. Structured fixture
+inspection is title-independent and is not permission to execute the hold.
+
 The weighted nth-to-default extension task P006 previously used this honest-
 block boundary while QUA-1237 owned the missing contract. It now carries
 explicit comparison target contracts: the analytical/copula target binds
