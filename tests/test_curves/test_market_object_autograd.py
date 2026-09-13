@@ -76,6 +76,36 @@ def test_date_aware_flat_curve_discount_date_preserves_trace():
     assert gradient_value == pytest.approx(expected, rel=1e-6)
 
 
+@pytest.mark.parametrize("bps", [-75.0, 0.0, 25.0])
+def test_date_aware_flat_curve_shift_preserves_rate_and_dated_forward_gradients(bps):
+    def shifted_curve(flat_rate):
+        return DateAwareFlatYieldCurve(
+            value_date=SETTLE,
+            flat_rate=flat_rate,
+            curve_day_count=DayCountConvention.ACT_365,
+        ).shift(bps)
+
+    rate = 0.05
+    maturity = year_fraction(SETTLE, END_DATE, DayCountConvention.ACT_365)
+    shifted_rate = rate + bps / 10_000.0
+    assert gradient(lambda r: shifted_curve(r).discount(1.5))(rate) == pytest.approx(
+        -1.5 * np.exp(-shifted_rate * 1.5), rel=1e-12,
+    )
+    assert gradient(lambda r: shifted_curve(r).discount_date(END_DATE))(rate) == pytest.approx(
+        -maturity * np.exp(-shifted_rate * maturity), rel=1e-12,
+    )
+
+    def forward(flat_rate):
+        return ForwardCurve(shifted_curve(flat_rate)).forward_rate_dates(
+            MID_DATE, END_DATE, day_count=DayCountConvention.ACT_360,
+        )
+
+    model_interval = year_fraction(MID_DATE, END_DATE, DayCountConvention.ACT_365)
+    alpha = year_fraction(MID_DATE, END_DATE, DayCountConvention.ACT_360)
+    expected = model_interval * np.exp(shifted_rate * model_interval) / alpha
+    assert gradient(forward)(rate) == pytest.approx(expected, rel=1e-12)
+
+
 def test_forward_curve_date_helpers_preserve_trace():
     def dated_forward(flat_rate):
         curve = DateAwareFlatYieldCurve(value_date=SETTLE, flat_rate=flat_rate)

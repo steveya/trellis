@@ -312,6 +312,8 @@ keeping today's ``autograd`` boundary honest.
   ``trellis.models.analytical.barrier.down_and_in_call_raw``
 - public ``YieldCurve`` / ``CreditCurve`` node-value sensitivities and
   ``GridVolSurface`` node-value sensitivities
+- ``DateAwareFlatYieldCurve`` flat-rate sensitivities through time-based and
+  dated discounts, dated forwards, and immutable ``shift(bps)`` operations
 - runtime rate-risk extraction on public ``YieldCurve`` node grids, with
   ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
   resulting analytics outputs
@@ -381,6 +383,16 @@ keeping today's ``autograd`` boundary honest.
 
 These paths now use autograd-friendly primitives and avoid scalarization inside
 the traced region.
+
+``DateAwareFlatYieldCurve.shift(bps)`` adds ``bps / 10_000`` to the continuously
+compounded rate without scalarizing it. The returned curve preserves its
+valuation date, curve day count, and maximum tenor, including the distinction
+between date-based discount time and a forward coupon's accrual convention.
+This traced primitive does not declare the node-based ``autodiff_public_curve``
+analytics contract. Runtime ``Duration`` on this curve still reports
+``parallel_curve_bump``; callable ``OASDuration`` also reprices shifted curves
+and preserves the existing market model parameters. It does not make callable
+tree Greeks autodifferentiable or add bucket shocks or curve rebuilding.
 
 Product-Family Gradient Matrix
 ------------------------------
