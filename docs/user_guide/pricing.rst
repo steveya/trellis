@@ -1307,6 +1307,14 @@ change those economics. These rows demonstrate the bounded fixed-coupon
 issuer-call route; they do not imply support for step-up/floating coupons,
 arbitrary callable products, PSOR, or an independent external BDT benchmark.
 
+``T89`` reuses this bond and dated market for a narrower analytics proof:
+constant-zero-OAS effective duration versus parallel-curve-bump duration on the
+same Hull-White payoff, using symmetric 25 bp shocks. Duration is required in
+years and compared within ``0.000001%`` of the reference duration; holder PV
+remains a separate USD output. Equal prices cannot substitute for a missing or
+failed duration. This is an internal consistency check, not independent
+validation, market-price OAS calibration, or a callable Vega claim.
+
 Some retained rows are intentionally executable only as certified honest
 blocks. For example, T09 asks for a step-up callable bond without supplying the
 dated coupon schedule, while the checked callable-bond routes currently accept

@@ -270,7 +270,7 @@ def benchmark_request_description(
     product = str(contract.get("product") or "").strip().lower()
     if (
         product == "callable_bond"
-        and str(task.get("id") or "").strip() in {"T02", "T17"}
+        and str(task.get("id") or "").strip() in {"T02", "T17", "T89"}
         and str(task.get("proof_fixture_id") or "").strip()
         == "usd_fixed_coupon_callable_bond_5pct_2025_2035_v1"
     ):

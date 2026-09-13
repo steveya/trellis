@@ -856,7 +856,7 @@ payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
 decisions are task-runner contracts, not general natural-language parser
 behavior.
 
-Legacy ``T02`` and ``T17`` are executable only through the named
+Legacy ``T02``, ``T17``, and ``T89`` are executable only through the named
 ``usd_fixed_coupon_callable_bond_5pct_2025_2035_v1`` proof fixture and
 ``usd_callable_fixed_5pct_proof`` market scenario. Manifest loading hydrates
 the complete economic contract before provenance is recorded; the fixture
@@ -867,6 +867,24 @@ the full callable-bond spec, carries the exact tree/PDE controls into generated
 targets, and records per-target acceptance. The product-specific validator
 rejects altered fields, missing units, changed references, or relaxed controls
 as ``legacy.callable_bond_invalid_contract``.
+
+``T89`` retains holder-PV price reporting in USD and declares its required
+``effective_duration`` output separately in ``cross_validate.analytics_contract``.
+The two pricing targets explicitly share the same Hull-White execution identity;
+their analytics are ``OASDuration(None, 25bp)`` and ``Duration(25bp)``, not different
+pricing models. The internal task-analytics bridge executes those public
+measures over the bound payoff and validates finite non-boolean values, years,
+successful status, the current-price denominator, the 25 bp shock and resolved
+finite-difference provenance before extracting scalars. Per-output units and
+provenance survive in ``output_metadata`` and target ``output_acceptance``.
+Existing ``output_tolerances_pct`` performs the relative-duration comparison.
+Missing, failed, non-finite, misunitized, or mismatched duration fails the task
+even when both holder prices agree; no external oracle is claimed.
+Direct ``run_task`` calls recognize the reserved, whitespace-normalized ``T89``
+ID independently of mutable corpus/manifest labels and validate its exact
+contract before market construction or build attempts. Contradictory task kinds
+cannot redirect T89 through the early FpML dispatcher; ordinary FpML conformance
+requests retain their existing dispatch behavior.
 
 ``T09`` follows the same fail-closed boundary for a different reason. Its title
 requests a step-up issuer-callable bond but the retained row does not author
