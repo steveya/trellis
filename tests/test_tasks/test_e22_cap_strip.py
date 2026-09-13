@@ -329,12 +329,14 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
     """Defend the authored contract across compilation, hydration and comparison."""
     import sys
     from pathlib import Path
+    from types import SimpleNamespace
 
     import trellis.agent.analytical_traces as analytical_traces
     import trellis.agent.executor as executor
     import trellis.agent.model_audit as model_audit
     import trellis.agent.platform_requests as platform_requests
     import trellis.agent.platform_traces as platform_traces
+    from trellis.agent.build_gate import evaluate_pre_generation_gate
     from trellis.agent.offline_agents import offline_local_agent_run_scope
     from trellis.agent.task_runtime import run_task
     from trellis.engine.payoff_pricer import price_payoff
@@ -342,13 +344,24 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
     task = {**_task(), "title": "Uninformative label"}
     observed = []
     compiled_metadata = {}
+    ordinary_gate_decisions = {}
     materialize = executor._materialize_deterministic_exact_binding_module
 
     def observed_materialize(skeleton, generation_plan, **kwargs):
         target = kwargs.get("comparison_target")
         if target:
+            blueprint = kwargs["semantic_blueprint"]
+            route_id = blueprint.dsl_lowering.family_ir.route_id
+            if target == "monte_carlo":
+                assert route_id == "monte_carlo_paths"
             compiled_metadata[target] = platform_requests._semantic_blueprint_summary(
-                kwargs["semantic_blueprint"]
+                blueprint
+            )
+            # Exact binding has no primitive plan. Exercise ordinary admission
+            # explicitly using the canonical route emitted by the real compiler.
+            ordinary_plan = SimpleNamespace(primitive_plan=SimpleNamespace(route=route_id))
+            ordinary_gate_decisions[target] = evaluate_pre_generation_gate(
+                None, ordinary_plan, semantic_blueprint=blueprint
             )
         return materialize(skeleton, generation_plan, **kwargs)
 
@@ -407,6 +420,10 @@ def test_e22_loaded_contract_prices_both_declared_lanes_end_to_end(
     assert result["token_usage_summary"]["call_count"] == 0
     assert result["instrument_type"] == "cap"
     assert set(compiled_metadata) == {"analytical", "monte_carlo"}
+    assert set(ordinary_gate_decisions) == {"analytical", "monte_carlo"}
+    for decision in ordinary_gate_decisions.values():
+        assert decision.decision == "proceed", decision.reason
+        assert not decision.route_admissibility_failures
     mc_ir = compiled_metadata["monte_carlo"]["dsl_family_ir"]
     assert mc_ir["state_spec"]["state_variable"] == "forward_rate"
     assert mc_ir["process_spec"] == {

@@ -1372,12 +1372,15 @@ class TestMonteCarloPathsRoutes:
         local_vol = find_route_by_id("local_vol_monte_carlo", registry)
 
         assert generic is not None
-        assert generic.admissibility.supported_process_families == ("gbm_1d", "hull_white_1f")
+        assert generic.admissibility.supported_process_families == (
+            "gbm_1d", "hull_white_1f", "independent_lognormal_forward_marginals",
+        )
         assert generic.admissibility.supported_state_tags == (
             "pathwise_only",
             "terminal_markov",
             "recombining_safe",
             "schedule_state",
+            "independent_fixing_marginals",
         )
         assert generic.admissibility.supported_path_requirement_kinds == (
             "terminal_only",
@@ -1385,6 +1388,7 @@ class TestMonteCarloPathsRoutes:
             "event_snapshots",
             "event_replay",
             "reducer_state",
+            "independent_fixing_marginals",
         )
         assert generic.admissibility.supports_calibration is True
         assert local_vol is not None

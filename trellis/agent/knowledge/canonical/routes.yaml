@@ -513,9 +513,10 @@ routes:
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
-      supported_state_tags: [pathwise_only, terminal_markov, recombining_safe, schedule_state]
-      supported_process_families: [gbm_1d, hull_white_1f]
-      supported_path_requirement_kinds: [terminal_only, full_path, event_snapshots, event_replay, reducer_state]
+      # Forward marginals are admitted only as the bounded cap/floor helper profile.
+      supported_state_tags: [pathwise_only, terminal_markov, recombining_safe, schedule_state, independent_fixing_marginals]
+      supported_process_families: [gbm_1d, hull_white_1f, independent_lognormal_forward_marginals]
+      supported_path_requirement_kinds: [terminal_only, full_path, event_snapshots, event_replay, reducer_state, independent_fixing_marginals]
       supports_calibration: true
     primitives:
       - module: trellis.models.processes.gbm

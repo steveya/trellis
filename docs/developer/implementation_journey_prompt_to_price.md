@@ -201,6 +201,14 @@ Hull-White, an OU transition, or a replayed short-rate path. Both the stress and
 binding-first proof inventories use E22's `analytical` / `monte_carlo` targets
 and the `analytical` reference.
 
+The canonical Monte Carlo route declares these forward-marginal capabilities,
+with admission restricted to the existing Black cap/floor helper profile.
+Mismatched product, state, process, path requirement, reducer, measure, helper
+or calibration assumptions return `unsupported_forward_marginal_profile`
+failures before ordinary generation. This is not generic joint-forward process
+support. The loaded E22 end-to-end test also evaluates the ordinary pre-generation
+gate, so an exact-binding replay cannot hide a route-admission failure.
+
 The exact validator accepts the authored source row and its canonical
 materialized market envelope. It rejects altered economics, controls or
 scenario values before build. The title is descriptive only, and the

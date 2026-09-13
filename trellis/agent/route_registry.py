@@ -1875,6 +1875,7 @@ def evaluate_route_admissibility(
         ):
             failures.append(f"unsupported_characteristic_family:{characteristic_family}")
     if isinstance(family_ir, EventAwareMonteCarloIR):
+        failures.extend(_forward_marginal_profile_failures(product, family_ir, calibration_step))
         supported_processes = set(admissibility.supported_process_families)
         process_family = str(getattr(getattr(family_ir, "process_spec", None), "process_family", "")).strip()
         if supported_processes and process_family and process_family not in supported_processes:
@@ -1904,6 +1905,83 @@ def evaluate_route_admissibility(
         ok=not failures,
         failures=tuple(dict.fromkeys(failures)),
     )
+
+
+def _forward_marginal_profile_failures(product, family_ir, calibration_step) -> tuple[str, ...]:
+    """Keep the cap/floor helper capability separate from general MC processes.
+
+    The route catalog declares a union of capabilities, not permission to mix
+    independent fixing marginals with Hull-White state, joint path payoffs, or
+    calibration. This profile describes only the existing Black strip helper.
+    """
+    process_family = "independent_lognormal_forward_marginals"
+    marginal_tag = "independent_fixing_marginals"
+    strip_family = "period_rate_option_strip"
+    helper = "price_rate_cap_floor_strip_monte_carlo"
+    if not (
+        getattr(product, "payoff_family", "") == strip_family
+        or family_ir.payoff_family == strip_family
+        or family_ir.helper_symbol == helper
+        or getattr(family_ir.process_spec, "process_family", "") == process_family
+        or marginal_tag in (getattr(family_ir.state_spec, "state_tags", ()) or ())
+        or getattr(family_ir.path_requirement_spec, "requirement_kind", "") == marginal_tag
+    ):
+        return ()
+
+    failures = []
+    instrument = getattr(product, "instrument_class", "")
+    if (
+        getattr(product, "semantic_id", "") != strip_family
+        or getattr(product, "payoff_family", "") != strip_family
+        or instrument not in {"cap", "floor"}
+        or getattr(product, "exercise_style", "") != "none"
+        or getattr(product, "model_family", "") not in {"interest_rate", "short_rate"}
+        or getattr(getattr(product, "controller_protocol", None), "controller_style", "") != "identity"
+        or family_ir.product_instrument != instrument
+        or family_ir.payoff_family != strip_family
+        or family_ir.helper_symbol != helper
+    ):
+        failures.append("unsupported_forward_marginal_profile:cap_floor_strip_helper")
+
+    # Optional authored terms may narrow the helper, but may not contradict it.
+    terms = getattr(product, "term_fields", {}) or {}
+    for term_name, expected in (
+        ("model", "black"), ("mc_distribution", process_family), ("sampling", "antithetic"),
+    ):
+        if term_name in terms and terms[term_name] != expected:
+            failures.append(f"unsupported_forward_marginal_profile:{term_name}")
+
+    expected_sections = (
+        ("state_spec", {
+            "state_variable": "forward_rate", "dimension": 1,
+            "state_tags": (marginal_tag,), "state_layout": "scalar",
+        }),
+        ("process_spec", {
+            "process_family": process_family, "simulation_scheme": "exact_lognormal",
+            "process_tags": ("antithetic", "no_joint_forward_process"),
+        }),
+        ("path_requirement_spec", {
+            "requirement_kind": marginal_tag, "snapshot_schedule_role": "observation_dates",
+            "reducer_kinds": ("period_option_cashflow_strip",),
+            "replay_mode": "independent_periods", "stored_fields": ("forward_rate",),
+        }),
+        ("payoff_reducer_spec", {
+            "reducer_kind": "period_option_cashflow_strip",
+            "output_semantics": "period_rate_option_strip_payoff",
+        }),
+        ("control_spec", {"control_style": "identity", "controller_role": "none"}),
+        ("measure_spec", {
+            "measure_family": "period_payment_forward",
+            "numeraire_binding": "payment_date_discount_factor",
+        }),
+    )
+    for section_name, expected_fields in expected_sections:
+        section = getattr(family_ir, section_name, None)
+        if any(getattr(section, field, None) != expected for field, expected in expected_fields.items()):
+            failures.append(f"unsupported_forward_marginal_profile:{section_name}")
+    if calibration_step is not None or family_ir.calibration_binding is not None:
+        failures.append("unsupported_forward_marginal_profile:calibration")
+    return tuple(failures)
 
 
 def _has_automatic_events(product) -> bool:

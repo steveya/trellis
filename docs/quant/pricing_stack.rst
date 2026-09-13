@@ -1303,6 +1303,11 @@ caplet forwards; cross-caplet dependence is unnecessary for this linear
 sum of individual option expectations. The compiler's Monte Carlo family IR
 records scalar forward rates, exact lognormal antithetic sampling, and
 independent period-payment-forward expectations, not Hull-White/OU dynamics.
+Ordinary Monte Carlo route admission permits this existing cap/floor helper
+profile only when the product, state, process, fixing-marginal storage,
+cashflow reducer and payment-forward measure agree. Declaring these route
+capabilities does not enable a general joint-forward model; incompatible
+profiles and calibration requests block before generation.
 It does not validate calibration,
 shifted/normal volatility, seasoned fixings or production holiday rules.
 
