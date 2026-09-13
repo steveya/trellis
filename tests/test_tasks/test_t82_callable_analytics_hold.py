@@ -174,7 +174,8 @@ def test_t82_exact_validation_and_runtime_reject_contract_drift(mutation):
         run_task(task, object(), build_fn=forbidden)
 
 
-def test_t82_structured_callable_evidence_is_title_independent(monkeypatch):
+@pytest.mark.parametrize("disposition", ("proof_hold", " proof_hold "))
+def test_t82_structured_callable_evidence_is_title_independent(monkeypatch, disposition):
     from trellis.agent import task_runtime
 
     def forbidden(*args, **kwargs):
@@ -185,6 +186,8 @@ def test_t82_structured_callable_evidence_is_title_independent(monkeypatch):
         "trellis.agent.semantic_contracts.draft_semantic_contract", forbidden
     )
     task = _expected_hold()
+    task["task_disposition"] = disposition
+    assert _exact_issues(task) == []
     original = task_runtime.task_to_semantic_contract(task)
     task["title"] = "Uninformative label"
     renamed = task_runtime.task_to_semantic_contract(task)
@@ -239,6 +242,71 @@ def test_t82_hold_stops_before_market_builder_and_pricer(
     assert REASON in str(exc.value)
     assert calls == []
     assert not (tmp_path / "results.json").exists()
+
+
+@pytest.mark.global_workflow
+@pytest.mark.parametrize("entrypoint", ("runtime", "runner"))
+@pytest.mark.parametrize("task_id", ("T82", " T82 "))
+@pytest.mark.parametrize(
+    "provenance",
+    (
+        {},
+        {"task_corpus": "proof_legacy"},
+        {"task_definition_manifest": "TASKS_PROOF_LEGACY.yaml"},
+        {"task_definition_manifest": "TASKS_EXTENSION.yaml", "task_corpus": "proof_legacy"},
+        {"task_definition_manifest": "TASKS_EXTENSION.yaml", "task_corpus": "extension"},
+    ),
+)
+def test_t82_hold_cannot_be_bypassed_by_mutable_provenance(
+    monkeypatch, tmp_path, entrypoint, task_id, provenance
+):
+    from scripts import run_tasks
+    from trellis.agent import task_runtime
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("T82 must be held before any runtime synthesis or execution")
+
+    monkeypatch.setattr(task_runtime, "_effective_task_description", forbidden)
+    monkeypatch.setattr(task_runtime, "build_market_state_for_task", forbidden)
+    monkeypatch.setattr(run_tasks, "build_market_state", forbidden)
+    task = _expected_hold()
+    task.pop("task_definition_manifest")
+    task.pop("task_corpus")
+    task.update(provenance, id=task_id)
+
+    with pytest.raises(TaskManifestValidationError) as exc:
+        if entrypoint == "runtime":
+            task_runtime.run_task(task, object(), build_fn=forbidden, price_fn=forbidden)
+        else:
+            run_tasks.run_block(
+                [task], str(tmp_path / "results.json"), offline_local_agents=True
+            )
+
+    assert {issue.code for issue in exc.value.report.blocking_issues} == {
+        "legacy.non_executable_disposition"
+    }
+    assert REASON in str(exc.value)
+    assert not (tmp_path / "results.json").exists()
+
+
+def test_t82_exact_contract_rejects_relabeling_without_manifest_provenance(monkeypatch):
+    from trellis.agent import task_runtime
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("malformed T82 must not reach description synthesis")
+
+    monkeypatch.setattr(task_runtime, "_effective_task_description", forbidden)
+    task = _expected_hold()
+    task.pop("task_definition_manifest")
+    task.pop("task_corpus")
+    task.update(task_disposition="named_proof_fixture", status="pending")
+
+    with pytest.raises(
+        TaskManifestValidationError, match="callable_analytics_hold_invalid_contract"
+    ):
+        task_runtime.run_task(task, object(), build_fn=forbidden)
 
 
 @pytest.mark.global_workflow

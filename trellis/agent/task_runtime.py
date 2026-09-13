@@ -1203,7 +1203,7 @@ def task_to_description(task: dict) -> str:
     """Convert a pricing-task entry into a pricing-build request string."""
     if (
         str(task.get("id") or "").strip() == "T82"
-        and task.get("task_disposition") == "proof_hold"
+        and str(task.get("task_disposition") or "").strip() == "proof_hold"
     ):
         return str(task.get("description") or "").strip()
     benchmark_description = benchmark_request_description(task, root=ROOT)
@@ -1357,7 +1357,7 @@ def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
     if (
         str(task.get("id") or "").strip() == "T82"
-        and task.get("task_disposition") == "proof_hold"
+        and str(task.get("task_disposition") or "").strip() == "proof_hold"
     ):
         # Introspection preserves the authored hold rather than synthesizing a
         # pricing prompt. Execution rejects this row before reaching this path.

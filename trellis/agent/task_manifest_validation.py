@@ -330,9 +330,12 @@ def assert_executable_task_disposition(
     """Reject governed legacy holds at the shared execution boundary."""
     issues: list[TaskManifestIssue] = []
     for index, task in enumerate(tasks):
-        if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
+        # T82 is a reserved exact hold. Mutable loader-provenance fields on a
+        # direct-call mapping must not opt it out of its admission boundary.
+        is_t82 = _text(task.get("id")) == "T82"
+        if not is_t82 and _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
             continue
-        if _text(task.get("id")) == "T82":
+        if is_t82:
             contract_issues = _validate_legacy_callable_bond_comparison_contract(
                 LEGACY_TASKS_MANIFEST,
                 task,

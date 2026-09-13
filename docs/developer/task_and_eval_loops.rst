@@ -183,6 +183,10 @@ generic Black-surface Vega from the fixture's explicit Hull-White sigma;
 straight-bond Greeks cannot serve as the missing callable reference.
 Both CLI selection and direct ``run_task(...)`` validate the exact hold before
 rejecting it with ``legacy.non_executable_disposition`` and its authored reason.
+The reserved, normalized T82 task ID selects this guard before mutable manifest
+or corpus metadata can filter it out. Removing or changing that metadata cannot
+authorize execution. Disposition whitespace is normalized consistently by
+admission and both description helpers.
 There are zero market-construction, builder, LLM, or pricer attempts, and no
 pricing-result file is produced. Altered T82 hold/fixture fields instead fail
 with ``legacy.callable_analytics_hold_invalid_contract``. Structured fixture
