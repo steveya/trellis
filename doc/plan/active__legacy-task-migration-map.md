@@ -29,6 +29,13 @@ bond/curve/KRD-grid contract, and T85 is a `rewrite_candidate` pending full
 bond cashflows, settlement, price basis, and yield conventions. All three
 remain outside executable pricing selection.
 
+`QUA-1262` makes T82 an exact `proof_hold` over the authored T02/T17 callable
+fixture and named market. OAS price/basis, volatility and duration bump
+definitions, scenario coordinates/ladder, output units, tolerances, and valid
+callable references remain missing. Generic Black-surface Vega is not
+Hull-White model-sigma vega. This row is rejected before execution and must
+not be counted as a successful pricing or analytics replay.
+
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |
 | `T01` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical |
@@ -112,7 +119,7 @@ remain outside executable pricing selection.
 | `T79` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Convertible bond: tree vs MC vs PDE |
 | `T80` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Bermudan swaption: tree vs LSM MC |
 | `T81` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Bond Greeks: autograd vs FD vs analytical |
-| `T82` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Callable bond full analytics: vega, OAS, duration, scenarios |
+| `T82` | `proof_hold` | `TASKS_PROOF_LEGACY.yaml` | Callable bond full analytics: vega, OAS, duration, scenarios |
 | `T83` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | KRD: interpolation-aware bumping |
 | `T84` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Scenario analysis: parallel + twist + butterfly |
 | `T85` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | YTM solver for bonds |

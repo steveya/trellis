@@ -1307,6 +1307,18 @@ change those economics. These rows demonstrate the bounded fixed-coupon
 issuer-call route; they do not imply support for step-up/floating coupons,
 arbitrary callable products, PSOR, or an independent external BDT benchmark.
 
+``T82`` retains the same bond and market but is an explicit ``proof_hold`` for
+full callable analytics. Before it can run, supply the OAS target price and its
+clean/dirty/holder-PV basis, the volatility coordinate and bump, the duration
+definition and curve bump, the scenario coordinates and ladder, output units,
+acceptance tolerances, and appropriate callable-analytics references. Generic
+Vega bumps Black volatility, not this fixture's explicit Hull-White sigma, and
+straight-bond Greeks do not validate callable risk. The hold does not mean
+duration, OAS-duration, or scenarios are generally unavailable. Selecting T82
+with ``--status all`` reports the authored hold reason before market creation,
+building, or pricing and produces no pricing result. A future executable T82
+requires a reviewed analytics contract, not a status or title change.
+
 Some retained rows are intentionally executable only as certified honest
 blocks. For example, T09 asks for a step-up callable bond without supplying the
 dated coupon schedule, while the checked callable-bond routes currently accept

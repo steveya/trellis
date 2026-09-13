@@ -298,7 +298,7 @@ def assert_executable_task_selection(
     root: Path | None = None,
 ) -> None:
     """Admit validated pricing/block rows and reject incomplete legacy selections."""
-    assert_executable_task_disposition(tasks)
+    assert_executable_task_disposition(tasks, root=root)
     issues: list[TaskManifestIssue] = []
     for index, task in enumerate(tasks):
         if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
@@ -324,12 +324,27 @@ def assert_executable_task_selection(
 
 def assert_executable_task_disposition(
     tasks: Sequence[Mapping[str, Any]],
+    *,
+    root: Path | None = None,
 ) -> None:
     """Reject governed legacy holds at the shared execution boundary."""
     issues: list[TaskManifestIssue] = []
     for index, task in enumerate(tasks):
-        if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
+        # T82 is a reserved exact hold. Mutable loader-provenance fields on a
+        # direct-call mapping must not opt it out of its admission boundary.
+        is_t82 = _text(task.get("id")) == "T82"
+        if not is_t82 and _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
             continue
+        if is_t82:
+            contract_issues = _validate_legacy_callable_bond_comparison_contract(
+                LEGACY_TASKS_MANIFEST,
+                task,
+                f"selected_tasks[{index}]",
+                root=root,
+            )
+            if contract_issues:
+                issues.extend(contract_issues)
+                continue
         disposition = _text(task.get("task_disposition"))
         if (
             disposition in _NON_PRICING_LEGACY_DISPOSITIONS
@@ -339,7 +354,12 @@ def assert_executable_task_disposition(
                 _issue(
                     LEGACY_TASKS_MANIFEST,
                     "legacy.non_executable_disposition",
-                    f"legacy task disposition {disposition!r} is not executable pricing",
+                    f"legacy task disposition {disposition!r} is not executable pricing"
+                    + (
+                        f": {_text(task.get('disposition_reason'))}"
+                        if _text(task.get("disposition_reason"))
+                        else ""
+                    ),
                     task_id=_text(task.get("id")),
                     path=f"selected_tasks[{index}].task_disposition",
                 )
@@ -1562,7 +1582,7 @@ def _validate_legacy_task(
             )
         )
 
-    if task_id in {"T02", "T17"}:
+    if task_id in {"T02", "T17", "T82"}:
         issues.extend(
             _validate_legacy_callable_bond_comparison_contract(
                 manifest_name,
@@ -1652,7 +1672,7 @@ def _validate_legacy_callable_bond_comparison_contract(
     *,
     root: Path | None = None,
 ) -> list[TaskManifestIssue]:
-    """Keep T02/T17 on one exact, reusable fixed-coupon proof fixture."""
+    """Keep callable pricing proofs and the T82 hold on one exact fixture."""
     task_id = _text(task.get("id"))
     contract = task.get("benchmark_contract")
     cross_validate = task.get("cross_validate")
@@ -1670,7 +1690,9 @@ def _validate_legacy_callable_bond_comparison_contract(
         ).get("usd_fixed_coupon_callable_bond_5pct_2025_2035_v1")
         fixture_metadata_valid = bool(
             fixture is not None
-            and task.get("proof_fixture_schema_version") == fixture.schema_version
+            and _manifest_value_matches(
+                task.get("proof_fixture_schema_version"), fixture.schema_version
+            )
             and _text(task.get("proof_fixture_digest")) == fixture.fixture_digest
         )
     except (OSError, ValueError, yaml.YAMLError):
@@ -1701,7 +1723,71 @@ def _validate_legacy_callable_bond_comparison_contract(
         "model_family": "interest_rate",
         "observation_style": "exercise_schedule",
     }
-    if task_id == "T02":
+    hold_contract_valid = True
+    if task_id == "T82":
+        expected_description = (
+            "Retain the named USD fixed-coupon callable-bond fixture for the requested "
+            "vega, OAS, duration, and scenario analysis. Do not build or price T82 until "
+            "its missing analytics definitions and callable references are authored."
+        )
+        expected_construct = ["analytics", "lattice"]
+        expected_cross_validate = {}
+        expected_hold_fields = {
+            "status": "blocked",
+            "new_component": None,
+            "disposition_reason": (
+                "T82 is a proof hold: the bond and market are authored, but OAS target price "
+                "and clean/dirty/holder-PV basis, volatility coordinate and bump, duration "
+                "definition and curve bump, scenario coordinates and ladder, required "
+                "outputs and units, acceptance tolerances, and callable-analytics references "
+                "are missing. Generic Vega moves the Black volatility surface, not the "
+                "explicit Hull-White sigma in this fixture. Straight-bond Greeks are not a "
+                "callable-analytics reference. Bounded duration, OAS-duration, and scenario "
+                "APIs exist; their existence does not supply these missing definitions."
+            ),
+            "missing_inputs": [
+                "oas_target_price",
+                "oas_price_basis_clean_dirty_or_holder_pv",
+                "volatility_coordinate_and_units",
+                "volatility_bump_size_and_units",
+                "duration_definition",
+                "duration_curve_coordinate_bump_size_and_units",
+                "scenario_curve_coordinates",
+                "scenario_ladder_and_bump_units",
+                "required_analytics_outputs_and_units",
+                "acceptance_metrics_and_tolerances",
+                "callable_analytics_references",
+            ],
+            "analytics_hold_contract": {
+                "requested_analytics": ["vega", "oas", "duration", "scenarios"],
+                "model_parameter_set": "callable_fixed_5pct_proof:hull_white",
+                "missing_input_policy": "requires_authored_values_no_defaults",
+                "vega_boundary": {
+                    "generic_coordinate": "black_vol_surface",
+                    "fixture_coordinate": "hull_white_sigma",
+                    "generic_vega_is_model_sigma_vega": False,
+                },
+                "reference_policy": "straight_bond_greeks_are_not_callable_analytics_reference",
+                "acceptance_policy": "not_evaluated_while_held",
+                "execution_policy": "zero_market_builder_llm_pricer_attempts",
+            },
+        }
+        allowed_fields = {
+            *expected_hold_fields,
+            "id", "title", "description", "task_disposition", "proof_fixture_id",
+            "proof_fixture_digest", "proof_fixture_schema_version", "market_scenario_id",
+            "benchmark_contract", "instrument_type", "validation_policy", "construct",
+            "market", "task_definition_manifest", "task_definition_version", "task_corpus",
+        }
+        hold_contract_valid = (
+            set(task) <= allowed_fields
+            and all(field in task for field in expected_hold_fields)
+            and _manifest_value_matches(
+                {field: task.get(field) for field in expected_hold_fields},
+                expected_hold_fields,
+            )
+        )
+    elif task_id == "T02":
         expected_description = (
             "Price the named USD fixed-coupon callable-bond proof fixture with "
             "BDT and Hull-White short-rate trees. Report holder present value "
@@ -1875,7 +1961,8 @@ def _validate_legacy_callable_bond_comparison_contract(
 
     valid = all(
         (
-            _text(task.get("task_disposition")) == "named_proof_fixture",
+            _text(task.get("task_disposition"))
+            == ("proof_hold" if task_id == "T82" else "named_proof_fixture"),
             _text(task.get("proof_fixture_id"))
             == "usd_fixed_coupon_callable_bond_5pct_2025_2035_v1",
             fixture_metadata_valid,
@@ -1883,7 +1970,9 @@ def _validate_legacy_callable_bond_comparison_contract(
             _text(task.get("instrument_type")) == "callable_bond",
             _text(task.get("market_scenario_id"))
             == "usd_callable_fixed_5pct_proof",
-            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            _text(task.get("validation_policy"))
+            == ("exact_nonpricing_hold" if task_id == "T82" else "invariants_and_cross_method"),
+            hold_contract_valid,
             "comparison_regime" not in task,
             not any(
                 field in task
@@ -1899,7 +1988,7 @@ def _validate_legacy_callable_bond_comparison_contract(
             set(contract) == set(expected_contract),
             _manifest_value_matches(contract, expected_contract),
             set(cross_validate) == set(expected_cross_validate),
-            set(targets) == set(expected_cross_validate["target_contracts"]),
+            set(targets) == set(expected_cross_validate.get("target_contracts", {})),
             _manifest_value_matches(cross_validate, expected_cross_validate),
         )
     )
@@ -1908,8 +1997,16 @@ def _validate_legacy_callable_bond_comparison_contract(
     return [
         _issue(
             manifest_name,
-            "legacy.callable_bond_invalid_contract",
-            "T02/T17 require the exact named fixed-coupon callable-bond proof contract",
+            (
+                "legacy.callable_analytics_hold_invalid_contract"
+                if task_id == "T82"
+                else "legacy.callable_bond_invalid_contract"
+            ),
+            (
+                "T82 requires the exact authored callable-analytics proof hold and named fixture"
+                if task_id == "T82"
+                else "T02/T17 require the exact named fixed-coupon callable-bond proof contract"
+            ),
             task_id=task_id,
             path=path,
         )
@@ -2507,6 +2604,8 @@ def _meaningful_value(value: Any) -> bool:
 
 def _manifest_value_matches(actual: Any, expected: Any) -> bool:
     """Compare authored exact values without treating booleans as numbers."""
+    if isinstance(expected, bool):
+        return isinstance(actual, bool) and actual is expected
     if isinstance(expected, (int, float)) and not isinstance(expected, bool):
         return (
             isinstance(actual, (int, float))

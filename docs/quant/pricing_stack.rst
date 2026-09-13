@@ -1117,6 +1117,17 @@ bonds, or a generic callable-security engine. Model selection and calibration
 coordinates belong to the valuation target and named market parameter set,
 not to derivative spec overrides.
 
+The T82 full-analytics request retains this exact callable fixture but remains
+a non-pricing proof hold. It has no authored OAS price/basis, volatility risk
+coordinate and bump, duration definition and curve bump, scenario ladder,
+output-unit contract, acceptance tolerances, or callable-analytics references.
+Generic ``Vega`` moves the Black volatility surface, not the explicit
+Hull-White sigma used by the fixture; its output cannot be relabelled as
+model-sigma vega. Straight-bond Greeks are not a reference for the callable
+bond. Bounded duration, OAS-duration, and scenario APIs exist, but neither a
+successful bond price nor the availability of those APIs defines T82's missing
+analytics contract. The task is rejected before any pricing or risk evaluation.
+
 ``T05`` is intentionally narrower: the former callable-tree "symmetry" target
 was not an independent implementation. The row now proves one explicitly bound
 puttable-lattice artifact plus the holder-exercise/straight-bond lower-bound
