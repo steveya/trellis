@@ -7,6 +7,7 @@ internally by the builder prompt path and externally through repo-aware tools.
 
 from __future__ import annotations
 
+import math
 import re
 import textwrap
 from dataclasses import dataclass
@@ -164,7 +165,8 @@ class ComparisonHarnessPlan:
 
     targets: tuple[ComparisonHarnessTarget, ...]
     reference_target: str | None
-    tolerance_pct: float
+    tolerance_pct: float | None
+    target_tolerances_pct: Mapping[str, float]
 
     def to_payload(self) -> dict[str, Any]:
         """Return the stable JSON-safe harness representation."""
@@ -172,7 +174,62 @@ class ComparisonHarnessPlan:
             "targets": [target.to_payload() for target in self.targets],
             "reference_target": self.reference_target,
             "tolerance_pct": self.tolerance_pct,
+            "target_tolerances_pct": dict(self.target_tolerances_pct),
         }
+
+
+def resolve_comparison_tolerances(
+    cross_validate: Mapping[str, Any],
+    *,
+    target_ids: set[str],
+    reference_target: str | None,
+) -> tuple[float | None, dict[str, float]]:
+    """Validate authored tolerances without extending one target's allowance.
+
+    A per-target map needs an entry for each comparator unless an explicit
+    global tolerance supplies the fallback. The legacy 5% default applies only
+    when neither form is authored.
+    """
+    def finite_tolerance(value: Any, field: str) -> float:
+        try:
+            tolerance = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{field} must be finite and non-negative") from exc
+        if isinstance(value, bool) or not math.isfinite(tolerance) or tolerance < 0:
+            raise ValueError(f"{field} must be finite and non-negative")
+        return tolerance
+
+    has_target_tolerances = "target_tolerances_pct" in cross_validate
+    raw_target_tolerances = cross_validate.get("target_tolerances_pct", {})
+    if not isinstance(raw_target_tolerances, Mapping):
+        raise ValueError("target_tolerances_pct must be a mapping")
+    target_tolerances = {
+        str(target_id): finite_tolerance(tolerance, f"tolerance for {target_id}")
+        for target_id, tolerance in raw_target_tolerances.items()
+    }
+    unknown_targets = sorted(set(target_tolerances) - target_ids)
+    if unknown_targets:
+        raise ValueError(
+            "target tolerances reference unknown targets: " + ", ".join(unknown_targets)
+        )
+
+    if "tolerance_pct" in cross_validate:
+        global_tolerance = finite_tolerance(
+            cross_validate["tolerance_pct"], "tolerance_pct"
+        )
+    elif has_target_tolerances:
+        missing_targets = sorted(
+            target_ids - {reference_target} - set(target_tolerances)
+        )
+        if missing_targets:
+            raise ValueError(
+                "missing target tolerances without an authored tolerance_pct: "
+                + ", ".join(missing_targets)
+            )
+        global_tolerance = None
+    else:
+        global_tolerance = 5.0
+    return global_tolerance, target_tolerances
 
 
 def normalize_comparison_relation(
@@ -619,11 +676,16 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
             + ", ".join(reference_targets)
         )
     reference_target = reference_targets[0] if reference_targets else None
-    tolerance_pct = float(cross_validate.get("tolerance_pct", 5.0))
+    tolerance_pct, target_tolerances_pct = resolve_comparison_tolerances(
+        cross_validate,
+        target_ids=target_id_set,
+        reference_target=reference_target,
+    )
     return ComparisonHarnessPlan(
         targets=tuple(targets),
         reference_target=reference_target,
         tolerance_pct=tolerance_pct,
+        target_tolerances_pct=target_tolerances_pct,
     )
 
 

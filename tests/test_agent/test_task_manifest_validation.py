@@ -72,6 +72,141 @@ def _legacy_callable_task(task_id: str):
     )
 
 
+def _authored_legacy_swaption_task():
+    common_target = {
+        "payoff_family": "swaption",
+        "exercise_style": "european",
+        "model_family": "interest_rate",
+        "underlying_asset_class": "rate",
+        "observation_style": "fixed_schedule",
+    }
+    return {
+        "id": "T73",
+        "title": "European swaption: Black76 vs HW tree vs HW MC",
+        "status": "pending",
+        "task_definition_manifest": "TASKS_PROOF_LEGACY.yaml",
+        "description": (
+            "Price the authored cash-settled USD payer European swaption with "
+            "Black76, a Hull-White tree, and seeded Hull-White Monte Carlo. "
+            "Report holder present value in USD and compare Black76 and Monte "
+            "Carlo with the Hull-White tree under their authored target tolerances."
+        ),
+        "instrument_type": "swaption",
+        "task_disposition": "executable_pricing",
+        "market_scenario_id": "usd_european_swaption_proof",
+        "validation_policy": "invariants_and_cross_method",
+        "construct": ["analytical", "lattice", "monte_carlo"],
+        "new_component": None,
+        "benchmark_contract": {
+            "product": "swaption",
+            "style": "european",
+            "payer_receiver": "payer",
+            "settlement_type": "cash",
+            "settlement_timing": "exercise_date",
+            "currency": "USD",
+            "notional": 1_000_000.0,
+            "settle_date": "2024-11-15",
+            "exercise_date": "2025-11-15",
+            "swap_start_date": "2025-11-15",
+            "maturity_date": "2030-11-15",
+            "fixed_coupon": 0.03,
+            "fixed_coupon_unit": "decimal_annual_rate",
+            "fixed_frequency": "semi_annual",
+            "fixed_day_count": "30/360",
+            "float_frequency": "quarterly",
+            "float_day_count": "ACT/360",
+            "model_time_day_count": "30/360",
+            "rate_index": "USD-SOFR-3M",
+            "discount_curve_id": "usd_ois",
+            "forecast_curve_id": "USD-SOFR-3M",
+            "black_vol_surface_id": "usd_rates_smile",
+            "comparison_model_name": "hull_white_1f",
+            "comparison_model_parameter_set": "t73_hull_white_1f",
+            "comparison_mean_reversion": 0.05,
+            "comparison_sigma": 0.01,
+            "comparison_sigma_unit": "absolute_decimal_rate",
+            "comparison_quote_family": "implied_vol",
+            "comparison_quote_convention": "black",
+            "comparison_quote_subject": "swaption",
+            "valuation_measure": "holder_present_value",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "tolerance_unit": "percent_of_reference_price",
+        },
+        "cross_validate": {
+            "internal": ["black76", "hw_tree", "hw_mc"],
+            "reference_target": "hw_tree",
+            "relations": {
+                "black76": "within_tolerance",
+                "hw_mc": "within_tolerance",
+            },
+            "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0},
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "target_contracts": {
+                "black76": {
+                    "method": "analytical",
+                    "route_id": "analytical_black76",
+                    "route_family": "analytical",
+                    "backend_binding_id": (
+                        "trellis.models.rate_style_swaption.price_swaption_black76_raw"
+                    ),
+                    "variant_parameters": {
+                        "pricing_model": "black76",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                        "quote_family": "implied_vol",
+                        "quote_convention": "black",
+                        "quote_subject": "swaption",
+                    },
+                    "validation_bundle_id": "analytical:swaption",
+                    **common_target,
+                },
+                "hw_tree": {
+                    "method": "rate_tree",
+                    "route_id": "rate_tree_backward_induction",
+                    "route_family": "rate_lattice",
+                    "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+                    "variant_parameters": {
+                        "pricing_model": "hull_white_1f",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                    },
+                    "spec_overrides": {"tree_steps": 120},
+                    "validation_bundle_id": "rate_tree:swaption",
+                    **common_target,
+                },
+                "hw_mc": {
+                    "method": "monte_carlo",
+                    "route_id": "monte_carlo_paths",
+                    "route_family": "monte_carlo",
+                    "backend_binding_id": (
+                        "trellis.models.monte_carlo.event_aware."
+                        "price_event_aware_monte_carlo"
+                    ),
+                    "variant_parameters": {
+                        "process": "hull_white_1f",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                        "sampling": "pseudo_random",
+                    },
+                    "spec_overrides": {
+                        "n_paths": 20_000,
+                        "n_steps": 64,
+                        "seed": 42,
+                    },
+                    "validation_bundle_id": "monte_carlo:swaption",
+                    **common_target,
+                },
+            },
+        },
+    }
+
+
 def _extension_task(task_id: str):
     root = Path(__file__).resolve().parents[2]
     payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
@@ -1247,6 +1382,119 @@ def test_authored_legacy_callable_comparisons_are_admitted_for_runtime(task_id):
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
     assert_executable_task_selection([_legacy_callable_task(task_id)])
+
+
+def test_t73_repository_row_is_the_exact_authored_swaption_contract():
+    from trellis.agent.task_manifests import load_task_manifest
+
+    actual = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+    expected = _authored_legacy_swaption_task()
+
+    for field in (
+        "description",
+        "instrument_type",
+        "task_disposition",
+        "market_scenario_id",
+        "validation_policy",
+        "construct",
+        "new_component",
+        "benchmark_contract",
+        "cross_validate",
+    ):
+        assert actual.get(field) == expected[field]
+
+
+def test_authored_legacy_swaption_comparison_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_authored_legacy_swaption_task()])
+
+
+def test_materialized_t73_market_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+    from trellis.agent.task_manifests import load_task_manifest
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+
+    assert task.get("market")
+    assert_executable_task_selection([task])
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task["benchmark_contract"].__setitem__("notional", 100.0),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "settle_date", "2024-11-16"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "swap_start_date", "2025-11-16"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "fixed_day_count", "30E/360"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "float_day_count", "30/360"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "model_time_day_count", "ACT/365F"
+        ),
+        lambda task: task.__setitem__("market_scenario_id", "usd_flat"),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_mean_reversion", 0.10
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_model_parameter_set", "other"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "fixed_coupon_unit", "percent_annual_rate"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_sigma_unit", "relative_rate"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "settlement_type", "physical"
+        ),
+        lambda task: task["cross_validate"].__setitem__(
+            "reference_target", "black76"
+        ),
+        lambda task: task["cross_validate"]["target_tolerances_pct"].__setitem__(
+            "black76", 1.0
+        ),
+        lambda task: task["cross_validate"]["target_contracts"]["hw_tree"][
+            "spec_overrides"
+        ].__setitem__("tree_steps", 200),
+        lambda task: task["cross_validate"]["target_contracts"]["hw_mc"][
+            "spec_overrides"
+        ].__setitem__("n_paths", 10_000),
+        lambda task: task["cross_validate"].__setitem__(
+            "external", ["quantlib"]
+        ),
+    ),
+)
+def test_legacy_swaption_comparison_rejects_exact_contract_drift(mutation):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_authored_legacy_swaption_task())
+    mutation(task)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.swaption_invalid_contract" in _codes(exc_info.value.report)
 
 
 @pytest.mark.parametrize(

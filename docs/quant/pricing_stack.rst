@@ -224,8 +224,9 @@ surface directly:
 
 1. ``resolve_swaption_black76_inputs(...)`` binds the typed expiry and market
    conventions;
-2. ``build_payment_timeline(...)`` starts the underlying swap schedule at the
-   explicit ``swap_start``;
+2. separate ``build_payment_timeline(...)`` calls start the fixed and floating
+   legs at the explicit ``swap_start`` while measuring both legs on one
+   authored model-time day-count clock;
 3. ``resolve_hull_white_monte_carlo_process_inputs(...)`` binds the short-rate
    process;
 4. ``build_discounted_swap_pv_payload(...)`` and
@@ -236,9 +237,18 @@ surface directly:
 6. ``build_event_aware_monte_carlo_problem(...)`` plus
    ``price_event_aware_monte_carlo(...)`` compile and evaluate it.
 
-The adapter retains day count, swap frequency, rate index, path/step/seed
-controls, and any explicitly declared Hull-White comparison parameters. It
-does not substitute an equity GBM process. The product-level
+The adapter retains separate fixed- and floating-leg frequency/day-count
+conventions, the shared model-time day count, rate index, path/step/seed
+controls, and any explicitly declared Hull-White comparison parameters. The
+fixed timeline supplies the annuity while the floating timeline supplies the
+forecast-leg PV; neither leg silently borrows the other's accrual convention.
+Time-based curve forwards are annualized on the model clock, so each projected
+floating coupon amount is the forward times its model-time interval. Equivalently,
+the rate on the floating accrual basis is that amount divided by the floating
+accrual fraction. This preserves the discount-factor ratio and gives zero curve
+basis when the discount and forecast curves coincide, even when the two day
+counts differ.
+It does not substitute an equity GBM process. The product-level
 ``price_swaption_monte_carlo(...)`` and
 ``resolve_swaption_monte_carlo_problem(...)`` APIs remain compatibility and
 independent-reference surfaces, not generated construction authority. The
@@ -997,6 +1007,17 @@ the swaption lattice contract, and calls ``price_on_lattice(...)``. The Monte
 Carlo adapter preserves the same model contract and adds stable
 comparison-quality sampling controls instead of drifting on an unseeded
 default path.
+
+The authored ``T73`` proof is deliberately narrower than general swaption
+pricing. It fixes a cash-at-exercise European payer contract, named USD OIS and
+SOFR-3M curves, separate fixed and floating schedules, one model-time clock, a
+named constant-parameter Hull-White regime, and exact lattice/Monte Carlo
+controls. Its Black76 target is the Black implied-vol normalization of the
+Hull-White tree price, not an independent model oracle; the seeded Monte Carlo
+target is accepted only under its separately authored sampling tolerance.
+When a comparison authors only per-target tolerances, every non-reference
+target must have an explicit tolerance; the runtime does not infer one from
+another target's allowance.
 
 Within the valuation layer, migrated calibration workflows now carry a bounded
 ``EngineModelSpec`` surface instead of relying only on a free-form

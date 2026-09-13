@@ -104,6 +104,30 @@ scenarios:
         rho: -0.2
         nu: 0.35
 
+  usd_european_swaption_proof:
+    source: mock
+    as_of: "2024-11-15"
+    description: Bounded USD OIS, SOFR, Black-vol, and Hull-White proof market for T73.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: USD-SOFR-3M
+      vol_surface: usd_rates_smile
+    constructor:
+      kind: flat_rates
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.04
+      forecast_rate: 0.0425
+      forecast_curve_name: USD-SOFR-3M
+      black_vol: 0.2
+      model_parameter_sets:
+        t73_hull_white_1f:
+          parameter_set_name: t73_hull_white_1f
+          model_family: hull_white
+          mean_reversion: 0.05
+          sigma: 0.01
+          sigma_unit: absolute_decimal_rate
+          source_kind: explicit_proof_fixture
+
   usd_rates_smile_physical_bermudan:
     source: mock
     as_of: "2024-11-15"

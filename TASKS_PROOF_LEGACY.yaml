@@ -1364,19 +1364,128 @@ tasks:
   status: pending
 - id: T73
   title: 'European swaption: Black76 vs HW tree vs HW MC'
+  description: Price the authored cash-settled USD payer European swaption with Black76,
+    a Hull-White tree, and seeded Hull-White Monte Carlo. Report holder present value
+    in USD and compare Black76 and Monte Carlo with the Hull-White tree under their
+    authored target tolerances.
+  instrument_type: swaption
+  task_disposition: executable_pricing
+  market_scenario_id: usd_european_swaption_proof
+  validation_policy: invariants_and_cross_method
   construct:
   - analytical
   - lattice
   - monte_carlo
   new_component: null
+  benchmark_contract:
+    product: swaption
+    style: european
+    payer_receiver: payer
+    settlement_type: cash
+    settlement_timing: exercise_date
+    currency: USD
+    notional: 1000000.0
+    settle_date: '2024-11-15'
+    exercise_date: '2025-11-15'
+    swap_start_date: '2025-11-15'
+    maturity_date: '2030-11-15'
+    fixed_coupon: 0.03
+    fixed_coupon_unit: decimal_annual_rate
+    fixed_frequency: semi_annual
+    fixed_day_count: 30/360
+    float_frequency: quarterly
+    float_day_count: ACT/360
+    model_time_day_count: 30/360
+    rate_index: USD-SOFR-3M
+    discount_curve_id: usd_ois
+    forecast_curve_id: USD-SOFR-3M
+    black_vol_surface_id: usd_rates_smile
+    comparison_model_name: hull_white_1f
+    comparison_model_parameter_set: t73_hull_white_1f
+    comparison_mean_reversion: 0.05
+    comparison_sigma: 0.01
+    comparison_sigma_unit: absolute_decimal_rate
+    comparison_quote_family: implied_vol
+    comparison_quote_convention: black
+    comparison_quote_subject: swaption
+    valuation_measure: holder_present_value
+    output_unit: currency_amount
+    output_currency: USD
+    tolerance_unit: percent_of_reference_price
   cross_validate:
     internal:
     - black76
     - hw_tree
     - hw_mc
-    external:
-    - quantlib
-    - financepy
+    reference_target: hw_tree
+    relations:
+      black76: within_tolerance
+      hw_mc: within_tolerance
+    target_tolerances_pct:
+      black76: 0.1
+      hw_mc: 3.0
+    tolerance_unit: percent_of_reference_price
+    output_unit: currency_amount
+    output_currency: USD
+    target_contracts:
+      black76:
+        method: analytical
+        route_id: analytical_black76
+        route_family: analytical
+        backend_binding_id: trellis.models.rate_style_swaption.price_swaption_black76_raw
+        variant_parameters:
+          pricing_model: black76
+          model_parameter_set: t73_hull_white_1f
+          mean_reversion: 0.05
+          sigma: 0.01
+          quote_family: implied_vol
+          quote_convention: black
+          quote_subject: swaption
+        validation_bundle_id: analytical:swaption
+        payoff_family: swaption
+        exercise_style: european
+        model_family: interest_rate
+        underlying_asset_class: rate
+        observation_style: fixed_schedule
+      hw_tree:
+        method: rate_tree
+        route_id: rate_tree_backward_induction
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
+        variant_parameters:
+          pricing_model: hull_white_1f
+          model_parameter_set: t73_hull_white_1f
+          mean_reversion: 0.05
+          sigma: 0.01
+        spec_overrides:
+          tree_steps: 120
+        validation_bundle_id: rate_tree:swaption
+        payoff_family: swaption
+        exercise_style: european
+        model_family: interest_rate
+        underlying_asset_class: rate
+        observation_style: fixed_schedule
+      hw_mc:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        backend_binding_id: trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo
+        variant_parameters:
+          process: hull_white_1f
+          model_parameter_set: t73_hull_white_1f
+          mean_reversion: 0.05
+          sigma: 0.01
+          sampling: pseudo_random
+        spec_overrides:
+          n_paths: 20000
+          n_steps: 64
+          seed: 42
+        validation_bundle_id: monte_carlo:swaption
+        payoff_family: swaption
+        exercise_style: european
+        model_family: interest_rate
+        underlying_asset_class: rate
+        observation_style: fixed_schedule
   status: pending
 - id: T74
   title: 'European equity call: 5-way (tree, PDE, MC, FFT, COS)'

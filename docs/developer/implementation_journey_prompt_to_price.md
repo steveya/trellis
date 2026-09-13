@@ -96,8 +96,9 @@ compatibility evidence, not generated construction authority.
 T73 applies the same boundary to a European swaption Monte Carlo target. The
 route and exact binding no longer point at ``price_swaption_monte_carlo(...)``
 or ``resolve_swaption_monte_carlo_problem(...)``. They expose the reusable
-expiry resolver, explicit-start payment timeline, Hull-White process binding,
-discounted swap-PV payload, short-rate discount reducer, event/problem
+expiry resolver, explicit-start fixed and floating payment timelines on one
+authored model-time clock, Hull-White process binding, discounted swap-PV
+payload, short-rate discount reducer, event/problem
 contracts, problem compiler, and generic event-aware estimator. DSL lowering
 records those stages as an ordered ``ThenExpr`` and deterministic offline
 generation materializes the same sequence. This makes source identity and
@@ -113,6 +114,22 @@ Deterministic generation preserves the Hull-White/BDT model, explicit
 comparison parameters, conventions, and tree-step controls. The retained
 ``price_swaption_tree(...)`` wrapper remains an independent reference rather
 than the source identity of the generated artifact.
+
+The repository row for T73 now authors the economics, named market scenario,
+settlement/output contract, model parameters, numerical controls, reference
+target, and per-target tolerances directly. Runtime synthesis must therefore
+remain title-independent. The proof does not establish external-library
+parity, independent Black-vs-Hull-White model agreement, Bermudan exercise,
+physical settlement, stochastic basis, or production calibration coverage.
+
+Per-target-only tolerance maps must cover every non-reference price target.
+Missing entries fail before comparison execution; a tolerance for one target
+cannot become an implicit global allowance for the others. Result evidence
+reports no global tolerance for these maps and retains each target's authored
+tolerance. The legacy 5% fallback for requests with no authored tolerance remains
+tracked separately in QUA-1252.
+Promotion reviews use the candidate's own authored allowance and reject missing
+or malformed allowances in per-target-only evidence.
 
 Compiled request metadata now also carries a compact semantic-blueprint summary
 for downstream tooling. That summary records the canonical lowered route, the

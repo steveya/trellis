@@ -14,7 +14,11 @@ from trellis.models.rate_style_swaption import resolve_swaption_curve_basis_spre
 
 
 class EuropeanRateTreeSwaptionSpecLike(Protocol):
-    """Protocol for single-exercise swaption specs used by the tree helper."""
+    """Protocol for single-exercise swaption specs used by the tree helper.
+
+    Specs may additionally provide ``model_time_day_count``; when absent the
+    tree retains its legacy ``day_count`` model clock.
+    """
 
     notional: float
     strike: float
@@ -45,6 +49,7 @@ def build_swaption_tree_spec(
         day_count=spec.day_count,
         rate_index=spec.rate_index,
         is_payer=bool(spec.is_payer),
+        model_time_day_count=getattr(spec, "model_time_day_count", None),
     )
 
 

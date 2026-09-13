@@ -1584,6 +1584,64 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             },
         )
 
+    if task_id == "T73":
+        from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+        contract = task.get("benchmark_contract")
+        if not isinstance(contract, Mapping):
+            raise ValueError("T73 requires a structured benchmark_contract")
+        exercise_date = str(contract.get("exercise_date") or "").strip()
+        if not exercise_date:
+            raise ValueError("T73 swaption contract requires exercise_date")
+        term_fields = {
+            "currency": contract.get("currency"),
+            "notional": contract.get("notional"),
+            "fixed_coupon": contract.get("fixed_coupon"),
+            "fixed_coupon_unit": contract.get("fixed_coupon_unit"),
+            "settle_date": contract.get("settle_date"),
+            "swap_start": contract.get("swap_start_date"),
+            "swap_end": contract.get("maturity_date"),
+            "swap_frequency": contract.get("fixed_frequency"),
+            "fixed_leg_day_count": contract.get("fixed_day_count"),
+            "floating_frequency": contract.get("float_frequency"),
+            "float_leg_day_count": contract.get("float_day_count"),
+            "model_time_day_count": contract.get("model_time_day_count"),
+            "rate_index": contract.get("rate_index"),
+            "discount_curve_name": contract.get("discount_curve_id"),
+            "forecast_curve_name": contract.get("forecast_curve_id"),
+            "black_vol_surface_id": contract.get("black_vol_surface_id"),
+            "comparison_model_name": contract.get("comparison_model_name"),
+            "comparison_model_parameter_set": contract.get(
+                "comparison_model_parameter_set"
+            ),
+            "comparison_mean_reversion": contract.get(
+                "comparison_mean_reversion"
+            ),
+            "comparison_sigma": contract.get("comparison_sigma"),
+            "comparison_sigma_unit": contract.get("comparison_sigma_unit"),
+            "comparison_quote_family": contract.get("comparison_quote_family"),
+            "comparison_quote_convention": contract.get(
+                "comparison_quote_convention"
+            ),
+            "comparison_quote_subject": contract.get("comparison_quote_subject"),
+            "payer_receiver": contract.get("payer_receiver"),
+            "settlement_type": contract.get("settlement_type"),
+            "settlement_timing": contract.get("settlement_timing"),
+            "valuation_measure": contract.get("valuation_measure"),
+            "output_unit": contract.get("output_unit"),
+            "output_currency": contract.get("output_currency"),
+            "tolerance_unit": contract.get("tolerance_unit"),
+        }
+        return make_rate_style_swaption_contract(
+            description=description,
+            observation_schedule=(exercise_date,),
+            preferred_method="analytical",
+            exercise_style="european",
+            term_fields={
+                key: value for key, value in term_fields.items() if value is not None
+            },
+        )
+
     if task_id == "T102":
         from trellis.agent.semantic_contracts import make_terminal_basket_option_contract
 
@@ -5015,8 +5073,17 @@ def _cross_validate_comparison_task(
     price_fn: Callable[[Any, Any], float] | None = None,
 ) -> dict[str, Any]:
     """Instantiate and compare prices across successful comparison builds."""
+    from trellis.agent.assembly_tools import resolve_comparison_tolerances
     from trellis.engine.payoff_pricer import price_payoff
 
+    tolerance_pct, target_tolerances_pct = resolve_comparison_tolerances(
+        configured_targets,
+        target_ids={target.target_id for target in comparison_targets},
+        reference_target=next(
+            (target.target_id for target in comparison_targets if target.is_reference),
+            None,
+        ),
+    )
     custom_payoff_factory = payoff_factory is not None
     if payoff_factory is None:
         payoff_factory = lambda payoff_cls, spec_schema, settle: _make_test_payoff(
@@ -5181,15 +5248,18 @@ def _cross_validate_comparison_task(
         reference_price = median(priced[target_id] for target_id in comparable_targets)
         reference_target = "median_internal"
 
-    tolerance_pct = float(configured_targets.get("tolerance_pct", 5.0))
     deviations: dict[str, float] = {}
     passed_targets: list[str] = []
     failed_targets: list[str] = []
 
     if reference_price is not None:
         denominator = max(abs(reference_price), 1e-12)
-        tolerance_amount = denominator * tolerance_pct / 100.0
         for target_id in comparable_targets:
+            target_tolerance_pct = target_tolerances_pct.get(
+                target_id,
+                tolerance_pct,
+            )
+            tolerance_amount = denominator * target_tolerance_pct / 100.0
             relation = comparison_relations.get(target_id, "within_tolerance")
             delta = priced[target_id] - reference_price
             deviation_pct = abs(delta) / denominator * 100.0
@@ -5336,7 +5406,7 @@ def _cross_validate_comparison_task(
             "role": role,
             "relation": relation,
             "reference_target": resolved_reference_target,
-            "tolerance_pct": tolerance_pct,
+            "tolerance_pct": target_tolerances_pct.get(target_id, tolerance_pct),
             "tolerance_unit": configured_targets.get("tolerance_unit"),
             "output_unit": configured_targets.get("output_unit"),
             "status": target_status,
@@ -5380,6 +5450,7 @@ def _cross_validate_comparison_task(
         "reference_target": resolved_reference_target,
         "reference_price": round(reference_price, 10) if reference_price is not None else None,
         "tolerance_pct": tolerance_pct,
+        "target_tolerances_pct": target_tolerances_pct,
         "target_acceptance": target_acceptance,
         "deviations_pct": deviations,
         "comparison_relations": comparison_relations,

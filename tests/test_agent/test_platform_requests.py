@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 from pathlib import Path
 
@@ -577,25 +578,37 @@ def test_compile_build_request_preserves_swaption_conventions_and_hw_bindings():
         ),
     ],
 )
-def test_compile_build_request_bootstraps_title_only_swaption_task_into_hw_comparison_regime(
+def test_compile_build_request_uses_authored_t73_semantics_for_each_target(
+    monkeypatch,
     preferred_method: str,
     expected_binding: str,
 ):
     from trellis.agent.platform_requests import compile_build_request
-    from trellis.agent.task_runtime import _effective_task_description
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
 
-    description = _effective_task_description(
-        {
-            "id": "T73",
-            "title": "European swaption: Black76 vs HW tree vs HW MC",
-            "construct": ["analytical", "lattice", "monte_carlo"],
-            "cross_validate": {"internal": ["black76", "hw_tree", "hw_mc"]},
-        }
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
     )
+    task = deepcopy(task)
+    task["title"] = "Display label with no product or method cues"
+
+    def forbidden_parser(*_args, **_kwargs):
+        raise AssertionError("authored T73 must compile through its direct bridge")
+
+    monkeypatch.setattr(
+        "trellis.agent.semantic_contracts.draft_semantic_contract",
+        forbidden_parser,
+    )
+    semantic_contract = task_to_semantic_contract(task)
+
     compiled = compile_build_request(
-        description,
+        task["description"],
         instrument_type="swaption",
         preferred_method=preferred_method,
+        semantic_contract=semantic_contract,
     )
 
     assert compiled.execution_plan.reason == "semantic_contract_request"
@@ -610,6 +623,9 @@ def test_compile_build_request_bootstraps_title_only_swaption_task_into_hw_compa
     assert engine_model_spec.parameter_overrides["quote_family"] == "implied_vol"
     assert engine_model_spec.parameter_overrides["quote_convention"] == "black"
     assert engine_model_spec.parameter_overrides["quote_subject"] == "swaption"
+    assert engine_model_spec.rates_curve_roles.discount_curve_role == "discount_curve"
+    assert engine_model_spec.rates_curve_roles.forecast_curve_role == "forward_curve"
+    assert engine_model_spec.rates_curve_roles.rate_index == "usd-sofr-3m"
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.backend_binding_id == expected_binding
 

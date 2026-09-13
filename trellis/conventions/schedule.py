@@ -126,20 +126,26 @@ def build_period_schedule(
     roll_convention: RollConvention = RollConvention.NONE,
     day_count: DayCountConvention | None = None,
     time_origin: DateLike | None = None,
+    model_time_day_count: DayCountConvention | None = None,
     payment_lag_days: int = 0,
 ) -> EventSchedule:
     """Build an explicit periodized schedule for pricing routes.
 
     Unlike :func:`generate_schedule`, this returns accrual periods with
     explicit period boundaries, payment dates, optional accrual fractions, and
-    optional model times measured from ``time_origin``. The returned schedule
-    retains ``calendar`` for downstream convention-aware measurements.
+    optional model times measured from ``time_origin``. Coupon accruals use
+    ``day_count`` while model times may use an explicitly separate
+    ``model_time_day_count``. The returned schedule retains ``calendar`` for
+    downstream convention-aware measurements.
     """
     start_d = _to_date(start)
     end_d = _to_date(end)
     origin_d = _to_date(time_origin) if time_origin is not None else None
-    if origin_d is not None and day_count is None:
-        raise ValueError("day_count is required when time_origin is provided")
+    time_day_count = model_time_day_count or day_count
+    if origin_d is not None and time_day_count is None:
+        raise ValueError(
+            "day_count or model_time_day_count is required when time_origin is provided"
+        )
 
     payment_dates = generate_schedule(
         start_d,
@@ -171,10 +177,10 @@ def build_period_schedule(
             )
 
         t_start = t_end = t_payment = None
-        if origin_d is not None and day_count is not None:
-            t_start = year_fraction(origin_d, period_start, day_count, calendar=calendar)
-            t_end = year_fraction(origin_d, period_end, day_count, calendar=calendar)
-            t_payment = year_fraction(origin_d, payment_date, day_count, calendar=calendar)
+        if origin_d is not None and time_day_count is not None:
+            t_start = year_fraction(origin_d, period_start, time_day_count, calendar=calendar)
+            t_end = year_fraction(origin_d, period_end, time_day_count, calendar=calendar)
+            t_payment = year_fraction(origin_d, payment_date, time_day_count, calendar=calendar)
 
         periods.append(
             SchedulePeriod(

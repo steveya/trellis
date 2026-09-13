@@ -50,8 +50,15 @@ class SwaptionSpec:
     swap_end: date
     swap_frequency: Frequency = Frequency.SEMI_ANNUAL
     day_count: DayCountConvention = DayCountConvention.ACT_360
+    float_frequency: Frequency | None = None
+    float_day_count: DayCountConvention | None = None
+    model_time_day_count: DayCountConvention | None = None
     rate_index: str | None = None
     is_payer: bool = True
+    tree_steps: int | None = None
+    n_paths: int = 20000
+    n_steps: int = 64
+    seed: int = 42
 
 
 class SwaptionPayoff:

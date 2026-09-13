@@ -36,7 +36,7 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | 10 | `QUA-1247` | In Progress | Seven legacy title-derived bootstraps become named contracts |
 | 10.1 | `QUA-1255` | Done | T02/T17 receive authored callable pricing fixtures |
 | 10.2 | `QUA-1258` | Blocked | T82/T89 receive explicit callable analytics outputs |
-| 10.3 | `QUA-1254` | Backlog | T73 receives an authored European swaption contract |
+| 10.3 | `QUA-1254` | In Progress | T73 receives an authored European swaption contract |
 | 10.4 | `QUA-1256` | Backlog | E22 receives an authored cap-strip contract |
 | 10.5 | `QUA-1257` | Done | T102 receives an authored terminal-basket contract |
 | 10.6 | `QUA-1259` | Blocked | Remove the repaired title-derived pricing bootstraps |

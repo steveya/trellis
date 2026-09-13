@@ -277,6 +277,8 @@ def benchmark_request_description(
         title = "USD fixed-coupon callable bond proof"
     elif str(task.get("id") or "").strip() == "T102" and product == "rainbow_option":
         title = "Two-asset European terminal best-of call"
+    elif str(task.get("id") or "").strip() == "T73" and product == "swaption":
+        title = "European payer swaption"
     else:
         title = str(task.get("title") or "Benchmark pricing task").strip()
     lines = [f"Build a pricer for: {title}", ""]
@@ -411,6 +413,15 @@ def benchmark_spec_overrides(
                 scenario_contract=scenario_contract,
             )
         )
+        if str(contract.get("comparison_model_parameter_set") or "").strip():
+            for redundant_key in (
+                "exercise_date",
+                "fixed_coupon",
+                "maturity_date",
+                "settle_date",
+                "style",
+            ):
+                overrides.pop(redundant_key, None)
     elif product == "physical_bermudan_swaption":
         overrides.update(_physical_bermudan_swaption_overrides(contract))
     elif product == "callable_bond":
@@ -966,6 +977,39 @@ def _benchmark_detail_lines(
         )
         return lines
     if product == "swaption":
+        if str(contract.get("comparison_model_parameter_set") or "").strip():
+            valuation_date = _parse_date(contract.get("settle_date"))
+            exercise_date = _parse_date(contract.get("exercise_date"))
+            swap_start = _parse_date(contract.get("swap_start_date"))
+            swap_end = _parse_date(contract.get("maturity_date"))
+            lines.extend(
+                [
+                    f"Style: {contract.get('style')}.",
+                    f"Payer/receiver: {contract.get('payer_receiver')}.",
+                    f"Valuation date: {valuation_date.isoformat()}.",
+                    f"Notional: {contract.get('notional')} {contract.get('currency')}.",
+                    f"Expiry: {exercise_date.isoformat()}.",
+                    f"Swap start: {swap_start.isoformat()}. Swap end: {swap_end.isoformat()}.",
+                    f"Fixed leg: {contract.get('fixed_frequency')}, {contract.get('fixed_day_count')}.",
+                    "Float leg: "
+                    f"{contract.get('float_frequency')} {contract.get('rate_index')}, "
+                    f"{contract.get('float_day_count')}.",
+                    f"Model time day count: {contract.get('model_time_day_count')}.",
+                    "Market curves: "
+                    f"discount={contract.get('discount_curve_id')}, "
+                    f"forecast={contract.get('forecast_curve_id')}.",
+                    "Hull-White model: "
+                    f"mean reversion a={contract.get('comparison_mean_reversion')}, "
+                    f"vol sigma={contract.get('comparison_sigma')}.",
+                    "Settlement: "
+                    f"{contract.get('settlement_type')} at "
+                    f"{contract.get('settlement_timing')}.",
+                    "Valuation measure: "
+                    f"{contract.get('valuation_measure')} in "
+                    f"{contract.get('output_currency')} {contract.get('output_unit')}.",
+                ]
+            )
+            return lines
         style = str(contract.get("style") or "european").strip().lower()
         lines.extend(
             [
@@ -1281,13 +1325,14 @@ def _swaption_overrides(
     scenario_contract: MarketScenarioContract | None,
 ) -> dict[str, Any]:
     exercise_date = _parse_date(contract.get("exercise_date"))
+    swap_start = _parse_date(contract.get("swap_start_date")) or exercise_date
     maturity_date = _parse_date(contract.get("maturity_date"))
     payer_receiver = str(contract.get("payer_receiver") or "payer").strip().lower()
-    return {
+    overrides = {
         "notional": _float_or_none(contract.get("notional")),
         "strike": _float_or_none(contract.get("fixed_coupon")),
         "expiry_date": exercise_date,
-        "swap_start": exercise_date,
+        "swap_start": swap_start,
         "swap_end": maturity_date,
         "swap_frequency": _frequency(contract.get("fixed_frequency")),
         "day_count": _day_count(contract.get("fixed_day_count")),
@@ -1298,6 +1343,24 @@ def _swaption_overrides(
         ),
         "is_payer": payer_receiver == "payer",
     }
+    if str(contract.get("comparison_model_parameter_set") or "").strip():
+        overrides.update(
+            {
+                "valuation_date": _parse_date(contract.get("settle_date")),
+                "float_frequency": _frequency(contract.get("float_frequency")),
+                "float_day_count": _day_count(contract.get("float_day_count")),
+                "model_time_day_count": _day_count(
+                    contract.get("model_time_day_count")
+                ),
+                "rate_index": contract.get("rate_index"),
+                "settlement_type": contract.get("settlement_type"),
+                "settlement_timing": contract.get("settlement_timing"),
+                "valuation_measure": contract.get("valuation_measure"),
+                "output_unit": contract.get("output_unit"),
+                "output_currency": contract.get("output_currency"),
+            }
+        )
+    return overrides
 
 
 def _physical_bermudan_swaption_overrides(

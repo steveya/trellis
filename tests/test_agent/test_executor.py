@@ -1000,8 +1000,15 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
         exercise_style="european",
         term_fields={
             "fixed_leg_day_count": "THIRTY_360",
+            "float_leg_day_count": "ACT_360",
             "rate_index": "USD-SOFR-3M",
             "payment_frequency": "SEMI_ANNUAL",
+            "float_frequency": "QUARTERLY",
+            "model_time_day_count": "THIRTY_360",
+            "tree_steps": 120,
+            "n_paths": 20_000,
+            "n_steps": 64,
+            "seed": 42,
         },
     )
 
@@ -1017,10 +1024,60 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
     assert defaults["day_count"] == "DayCountConvention.THIRTY_360"
     assert defaults["rate_index"] == "USD-SOFR-3M"
     assert defaults["swap_frequency"] == "Frequency.SEMI_ANNUAL"
+    assert defaults["float_frequency"] == "Frequency.QUARTERLY"
+    assert defaults["float_day_count"] == "DayCountConvention.ACT_360"
+    assert defaults["model_time_day_count"] == "DayCountConvention.THIRTY_360"
+    assert defaults["tree_steps"] == "120"
+    assert defaults["n_paths"] == "20000"
+    assert defaults["n_steps"] == "64"
+    assert defaults["seed"] == "42"
 
     skeleton = _generate_skeleton(hydrated, "European payer swaption")
     assert "day_count: DayCountConvention = DayCountConvention.THIRTY_360" in skeleton
     assert "rate_index: str | None = 'USD-SOFR-3M'" in skeleton
+    assert "float_frequency: Frequency | None = Frequency.QUARTERLY" in skeleton
+    assert "float_day_count: DayCountConvention | None = DayCountConvention.ACT_360" in skeleton
+    assert "model_time_day_count: DayCountConvention | None = DayCountConvention.THIRTY_360" in skeleton
+    assert "tree_steps: int | None = 120" in skeleton
+    assert "n_paths: int = 20000" in skeleton
+    assert "n_steps: int = 64" in skeleton
+    assert "seed: int = 42" in skeleton
+
+
+def test_hydrate_swaption_semantic_manifest_aliases_produces_valid_python():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _hydrate_spec_schema_defaults_from_semantics,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="Authored European payer swaption",
+        observation_schedule=("2025-11-15",),
+        preferred_method="analytical",
+        exercise_style="european",
+        term_fields={
+            "fixed_leg_day_count": "30/360",
+            "float_leg_day_count": "ACT/360",
+            "swap_frequency": "semi_annual",
+            "floating_frequency": "quarterly",
+            "model_time_day_count": "30/360",
+        },
+    )
+
+    hydrated = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["swaption"],
+        semantic_contract=contract,
+    )
+    skeleton = _generate_skeleton(hydrated, contract.description)
+
+    ast.parse(skeleton)
+    assert "swap_frequency: Frequency = Frequency.SEMI_ANNUAL" in skeleton
+    assert "day_count: DayCountConvention = DayCountConvention.THIRTY_360" in skeleton
+    assert "float_frequency: Frequency | None = Frequency.QUARTERLY" in skeleton
+    assert "float_day_count: DayCountConvention | None = DayCountConvention.ACT_360" in skeleton
+    assert "model_time_day_count: DayCountConvention | None = DayCountConvention.THIRTY_360" in skeleton
 
 
 def test_hydrate_spec_schema_defaults_from_weighted_nth_to_default_semantics():
@@ -7306,8 +7363,11 @@ def test_deterministic_exact_binding_module_composes_european_swaption_rate_latt
     assert "n_steps=resolved.n_steps" in generated.code
     assert "day_count=spec.day_count" in generated.code
     assert "swap_frequency=spec.swap_frequency" in generated.code
+    assert "model_time_day_count=spec.model_time_day_count" in generated.code
     assert "rate_index=spec.rate_index" in generated.code
     assert "is_payer=bool(spec.is_payer)" in generated.code
+    assert "tree_steps = None if spec.tree_steps is None else int(spec.tree_steps)" in generated.code
+    assert "n_steps=tree_steps" in generated.code
     assert "price_swaption_tree(" not in generated.code
     assert "build_swaption_tree_spec(" not in generated.code
     assert "price_bermudan_swaption_tree(" not in generated.code
@@ -7433,12 +7493,22 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
     ):
         assert symbol in generated.code
     assert "swap_start = getattr(spec, \"swap_start\", None) or resolved.expiry_date" in generated.code
+    assert "fixed_payment_timeline = tuple(" in generated.code
+    assert "floating_payment_timeline = tuple(" in generated.code
+    assert "float_frequency = spec.float_frequency or spec.swap_frequency" in generated.code
+    assert "float_day_count = spec.float_day_count or spec.day_count" in generated.code
+    assert "model_time_day_count = spec.model_time_day_count or spec.day_count" in generated.code
     assert "spec.swap_frequency" in generated.code
     assert "day_count=spec.day_count" in generated.code
+    assert "float_frequency" in generated.code
+    assert "day_count=float_day_count" in generated.code
+    assert "model_time_day_count=model_time_day_count" in generated.code
+    assert "payment_timeline=fixed_payment_timeline" in generated.code
+    assert "floating_timeline=floating_payment_timeline" in generated.code
     assert "forecast_forward_curve(rate_index)" in generated.code
-    assert "n_paths = max(int(getattr(spec, \"n_paths\", 20000)), 2)" in generated.code
-    assert "n_steps = max(int(getattr(spec, \"n_steps\", 64)), 1)" in generated.code
-    assert "seed = spec.seed if hasattr(spec, \"seed\") else 42" in generated.code
+    assert "n_paths = int(spec.n_paths)" in generated.code
+    assert "n_steps = int(spec.n_steps)" in generated.code
+    assert "seed = int(spec.seed)" in generated.code
     calls = tuple(
         node
         for node in ast.walk(ast.parse(generated.code))
