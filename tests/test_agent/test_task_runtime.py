@@ -4672,20 +4672,41 @@ def test_task_to_instrument_type_detects_credit_loss_distribution():
     )
 
 
-def test_effective_task_description_bootstraps_title_only_swaption_proof_tasks():
+def test_effective_task_description_uses_authored_t73_contract_not_title_bootstrap(
+    monkeypatch,
+):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import _effective_task_description
 
-    description = _effective_task_description(
-        {
-            "id": "T73",
-            "title": "European swaption: Black76 vs HW tree vs HW MC",
-            "construct": ["analytical", "lattice", "monte_carlo"],
-            "cross_validate": {"internal": ["black76", "hw_tree", "hw_mc"]},
-        }
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+    renamed = deepcopy(task)
+    renamed["title"] = "Display label with no swaption or method cues"
+
+    def forbidden_bootstrap(_task):
+        raise AssertionError("authored T73 must not use title-derived bootstrap")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._bootstrap_rate_style_swaption_description",
+        forbidden_bootstrap,
     )
 
+    description = _effective_task_description(renamed)
+
     assert "European payer swaption" in description
+    assert "Notional: 1000000.0 USD." in description
     assert "Expiry: 2025-11-15." in description
+    assert "Swap start: 2025-11-15. Swap end: 2030-11-15." in description
+    assert "Fixed leg: semi_annual, 30/360." in description
+    assert "Float leg: quarterly USD-SOFR-3M, ACT/360." in description
+    assert "Model time day count: 30/360." in description
+    assert "Exercise value convention: positive_payer_underlying_swap_npv." in description
+    assert "No contractual settlement convention or delivery lifecycle is modeled." in description
     assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
     assert "Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)" in description
 
@@ -5575,6 +5596,172 @@ def test_proof_legacy_callable_semantic_contract_uses_authored_call_schedule(tas
         "call_price_quote_unit": "price_points_per_100_par",
         "tolerance_unit": "percent_of_reference_price",
     }
+
+
+def test_t73_semantic_contract_is_direct_and_title_independent(monkeypatch):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+    task = deepcopy(task)
+    task["title"] = "Display label with no product semantics"
+
+    def forbidden_parser(*_args, **_kwargs):
+        raise AssertionError("authored T73 must use the direct semantic bridge")
+
+    monkeypatch.setattr(
+        "trellis.agent.semantic_contracts.draft_semantic_contract",
+        forbidden_parser,
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    assert contract.product.semantic_id == "rate_style_swaption"
+    assert contract.product.exercise_style == "european"
+    assert contract.product.observation_schedule == ("2025-11-15",)
+    assert contract.product.settlement_rule == "exercise_value_only"
+    assert dict(contract.product.term_fields) == {
+        "currency": "USD",
+        "notional": 1_000_000.0,
+        "fixed_coupon": 0.03,
+        "fixed_coupon_unit": "decimal_annual_rate",
+        "settle_date": "2024-11-15",
+        "swap_start": "2025-11-15",
+        "swap_end": "2030-11-15",
+        "swap_frequency": "semi_annual",
+        "fixed_leg_day_count": "30/360",
+        "floating_frequency": "quarterly",
+        "float_leg_day_count": "ACT/360",
+        "model_time_day_count": "30/360",
+        "rate_index": "USD-SOFR-3M",
+        "discount_curve_name": "usd_ois",
+        "forecast_curve_name": "USD-SOFR-3M",
+        "black_vol_surface_id": "usd_rates_smile",
+        "comparison_model_name": "hull_white_1f",
+        "comparison_model_parameter_set": "t73_hull_white_1f",
+        "comparison_mean_reversion": 0.05,
+        "comparison_sigma": 0.01,
+        "comparison_sigma_unit": "absolute_decimal_rate",
+        "comparison_quote_family": "implied_vol",
+        "comparison_quote_convention": "black",
+        "comparison_quote_subject": "swaption",
+        "payer_receiver": "payer",
+        "exercise_value_convention": "positive_payer_underlying_swap_npv",
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+        "tolerance_unit": "percent_of_reference_price",
+    }
+
+
+def test_t73_cross_validation_applies_each_target_tolerance():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import (
+        ComparisonBuildTarget,
+        _cross_validate_comparison_task,
+    )
+
+    def target_contract(target_id, method):
+        return ComparisonTargetContract(
+            target_id,
+            method,
+            resolution_source="legacy_target_inference",
+            explicit=False,
+        )
+
+    class FakeResult:
+        def __init__(self, contract, price):
+            self.success = True
+            self.payoff_cls = type(
+                f"{contract.target_id}Payoff",
+                (),
+                {"price": price},
+            )
+            self.selected_method = contract.method
+            self.comparison_target_contract = contract.to_payload()
+
+    contracts = {
+        "black76": target_contract("black76", "analytical"),
+        "hw_tree": target_contract("hw_tree", "rate_tree"),
+        "hw_mc": target_contract("hw_mc", "monte_carlo"),
+    }
+    comparison_targets = [
+        ComparisonBuildTarget(contract=contracts["black76"], relation="within_tolerance"),
+        ComparisonBuildTarget(contract=contracts["hw_tree"], is_reference=True),
+        ComparisonBuildTarget(contract=contracts["hw_mc"], relation="within_tolerance"),
+    ]
+    live_results = {
+        "black76": FakeResult(contracts["black76"], 100.11),
+        "hw_tree": FakeResult(contracts["hw_tree"], 100.0),
+        "hw_mc": FakeResult(contracts["hw_mc"], 102.9),
+    }
+
+    result = _cross_validate_comparison_task(
+        comparison_targets,
+        live_results,
+        market_state=object(),
+        configured_targets={
+            "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0},
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+        price_fn=lambda payoff, market_state: payoff.price,
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed_targets"] == ["black76"]
+    assert result["passed_targets"] == ["hw_mc"]
+    assert result["target_acceptance"]["black76"]["tolerance_pct"] == 0.1
+    assert result["target_acceptance"]["hw_mc"]["tolerance_pct"] == 3.0
+    assert result["tolerance_pct"] is None
+    assert result["target_acceptance"]["hw_tree"]["tolerance_pct"] is None
+
+
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 50.0}},
+        {"target_tolerances_pct": {}},
+        {"target_tolerances_pct": {"hw_mc": float("nan")}},
+        {"target_tolerances_pct": {"hw_mc": -1.0}},
+        {"tolerance_pct": float("inf")},
+        {"tolerance_pct": True},
+    ),
+)
+def test_comparison_runtime_rejects_unauthored_or_invalid_tolerance_before_pricing(
+    acceptance,
+):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import (
+        ComparisonBuildTarget,
+        _cross_validate_comparison_task,
+    )
+
+    targets = [
+        ComparisonBuildTarget(
+            contract=ComparisonTargetContract("black76", "analytical"),
+            is_reference=True,
+        ),
+        ComparisonBuildTarget(
+            contract=ComparisonTargetContract("hw_mc", "monte_carlo"),
+        ),
+    ]
+    with pytest.raises(ValueError, match="tolerance"):
+        _cross_validate_comparison_task(
+            targets,
+            {},
+            market_state=object(),
+            configured_targets=acceptance,
+        )
 
 
 def test_effective_task_description_never_bootstraps_declared_honest_block():

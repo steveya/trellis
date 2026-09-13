@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import numpy as raw_np
@@ -557,7 +557,7 @@ class TestEventAwareMonteCarloAssembly:
         assert result["price"] == pytest.approx(black76_price, rel=0.35)
 
     def test_build_discounted_swap_pv_payload_preserves_curve_basis_and_schedule(self):
-        from trellis.core.date_utils import build_payment_timeline
+        from trellis.core.date_utils import build_payment_timeline, year_fraction
         from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
 
         settle = date(2024, 11, 15)
@@ -567,13 +567,41 @@ class TestEventAwareMonteCarloAssembly:
             date(2025, 11, 15),
             date(2030, 11, 15),
             Frequency.SEMI_ANNUAL,
-            day_count=DayCountConvention.ACT_360,
+            day_count=DayCountConvention.THIRTY_360,
             time_origin=settle,
             label="payload_test_timeline",
+        )
+        floating_payment_timeline = tuple(
+            replace(
+                period,
+                t_start=year_fraction(
+                    settle,
+                    period.start_date,
+                    DayCountConvention.THIRTY_360,
+                ),
+                t_end=year_fraction(
+                    settle,
+                    period.end_date,
+                    DayCountConvention.THIRTY_360,
+                ),
+                t_payment=year_fraction(
+                    settle,
+                    period.payment_date,
+                    DayCountConvention.THIRTY_360,
+                ),
+            )
+            for period in build_payment_timeline(
+                date(2025, 11, 15),
+                date(2030, 11, 15),
+                Frequency.QUARTERLY,
+                day_count=DayCountConvention.ACT_360,
+                label="payload_test_floating_timeline",
+            )
         )
 
         payload = build_discounted_swap_pv_payload(
             payment_timeline=payment_timeline,
+            floating_timeline=floating_payment_timeline,
             discount_curve=discount_curve,
             forward_curve=forward_curve,
             exercise_time=1.0,
@@ -589,7 +617,114 @@ class TestEventAwareMonteCarloAssembly:
         assert len(payload["payment_times"]) == len(payment_timeline)
         assert len(payload["accrual_fractions"]) == len(payment_timeline)
         assert len(payload["anchor_discount_factors"]) == len(payment_timeline)
+        assert payload["floating_start_times"] == pytest.approx(
+            tuple(float(period.t_start) for period in floating_payment_timeline)
+        )
+        assert payload["floating_end_times"] == pytest.approx(
+            tuple(float(period.t_end) for period in floating_payment_timeline)
+        )
+        assert payload["floating_payment_times"] == pytest.approx(
+            tuple(float(period.t_payment) for period in floating_payment_timeline)
+        )
+        assert payload["floating_accrual_fractions"] == pytest.approx(
+            tuple(float(period.accrual_fraction) for period in floating_payment_timeline)
+        )
+        assert payload["floating_anchor_discount_factors"] == pytest.approx(
+            tuple(
+                float(discount_curve.discount(float(period.t_payment)))
+                for period in floating_payment_timeline
+            )
+        )
+        assert len(payload["floating_payment_times"]) == 2 * len(payment_timeline)
         assert payload["curve_basis_spread"] > 0.0
+
+    @pytest.mark.parametrize("use_forward_wrapper", [False, True])
+    @pytest.mark.parametrize("separate_floating_timeline", [False, True])
+    def test_same_curve_swap_payload_has_zero_basis_across_accrual_clocks(
+        self, use_forward_wrapper, separate_floating_timeline
+    ):
+        from trellis.curves.forward_curve import ForwardCurve
+        from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+
+        curve = YieldCurve.flat(0.04, max_tenor=10.0)
+        fixed_timeline = core_build_payment_timeline(
+            date(2025, 11, 15),
+            date(2030, 11, 15),
+            Frequency.SEMI_ANNUAL,
+            day_count=DayCountConvention.THIRTY_360,
+            time_origin=date(2024, 11, 15),
+        )
+        floating_timeline = (
+            core_build_payment_timeline(
+                date(2025, 11, 15),
+                date(2030, 11, 15),
+                Frequency.QUARTERLY,
+                day_count=DayCountConvention.ACT_360,
+                model_time_day_count=DayCountConvention.THIRTY_360,
+                time_origin=date(2024, 11, 15),
+            )
+            if separate_floating_timeline
+            else None
+        )
+
+        payload = build_discounted_swap_pv_payload(
+            payment_timeline=fixed_timeline,
+            floating_timeline=floating_timeline,
+            discount_curve=curve,
+            forward_curve=ForwardCurve(curve) if use_forward_wrapper else curve,
+            exercise_time=1.0,
+            discount_reducer_name="discount_to_expiry",
+            mean_reversion=0.05,
+            strike=0.03,
+        )
+
+        assert payload["curve_basis_spread"] == pytest.approx(0.0, abs=1e-13)
+
+    @pytest.mark.legacy_compat
+    @pytest.mark.parametrize("use_forward_wrapper", [False, True])
+    def test_omitted_floating_timeline_preserves_authored_accrual_conversion(
+        self, use_forward_wrapper
+    ):
+        from trellis.core.types import SchedulePeriod
+        from trellis.curves.forward_curve import ForwardCurve
+        from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+
+        # The public pre-dual-leg API accepted independently authored accrual
+        # and model-time coordinates in SchedulePeriod, without a clock field.
+        period = SchedulePeriod(
+            start_date=date(2025, 11, 15),
+            end_date=date(2026, 2, 15),
+            payment_date=date(2026, 2, 15),
+            accrual_fraction=92.0 / 360.0,
+            t_start=1.0,
+            t_end=1.25,
+            t_payment=1.25,
+        )
+        curve = YieldCurve.flat(0.04, max_tenor=10.0)
+        common = {
+            "payment_timeline": (period,),
+            "discount_curve": curve,
+            "forward_curve": ForwardCurve(curve) if use_forward_wrapper else curve,
+            "exercise_time": 1.0,
+            "discount_reducer_name": "discount_to_expiry",
+            "mean_reversion": 0.05,
+            "strike": 0.03,
+        }
+
+        legacy = build_discounted_swap_pv_payload(**common)
+        explicit = build_discounted_swap_pv_payload(
+            **common, floating_timeline=(period,)
+        )
+
+        # The omitted-timeline contract annualized the forward on model time
+        # but accrued it on the supplied alpha. The explicit lane opts into
+        # consistent model-clock projection, even for the same period object.
+        forward = (raw_np.exp(0.04 * 0.25) - 1.0) / 0.25
+        discount_par = (raw_np.exp(0.04 * 0.25) - 1.0) / (92.0 / 360.0)
+        assert legacy["curve_basis_spread"] == pytest.approx(
+            forward - discount_par, abs=1e-13
+        )
+        assert explicit["curve_basis_spread"] == pytest.approx(0.0, abs=1e-13)
 
     def test_resolve_hull_white_monte_carlo_process_inputs_reads_market_surface(self):
         from trellis.models.monte_carlo.event_aware import resolve_hull_white_monte_carlo_process_inputs

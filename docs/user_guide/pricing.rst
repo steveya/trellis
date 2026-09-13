@@ -811,11 +811,12 @@ compatibility and reference function, but it is not advertised as construction
 authority.
 
 European swaption Monte Carlo targets are primitive-composed as well. Generated
-code resolves the European expiry basis, starts the payment timeline at the
-contract's explicit ``swap_start``, binds the Hull-White process, builds the
+code resolves the European expiry basis, starts separate fixed and floating
+payment timelines at the contract's explicit ``swap_start``, measures both on
+the same authored model-time clock, binds the Hull-White process, builds the
 discounted swap-PV settlement payload and short-rate discount reducer, declares
 the expiry events and typed problem, and calls the generic event-aware Monte
-Carlo estimator. Day count, swap frequency, rate index, path/step/seed controls,
+Carlo estimator. Both leg conventions, the rate index, path/step/seed controls,
 and explicit comparison parameters remain visible in that generated source.
 ``price_swaption_monte_carlo(...)`` and
 ``resolve_swaption_monte_carlo_problem(...)`` remain callable compatibility and
@@ -830,6 +831,19 @@ swap frequency, rate index, payer/receiver direction, explicit comparison
 parameters, and tree-step controls remain visible. ``price_swaption_tree(...)``
 and ``build_swaption_tree_spec(...)`` remain callable compatibility/reference
 APIs, but neither is live build authority.
+
+The checked T73 comparison should be read as one bounded proof, not a promise
+of general swaption coverage. It values the positive payer underlying-swap NPV
+at exercise, discounted to valuation, with a constant-notional fixed leg,
+a simple SOFR-3M floating leg,
+flat named curves, and a constant-parameter one-factor Hull-White model. Its
+Black76 result is normalized from the Hull-White tree price, and its seeded
+Monte Carlo result has a looser, separately authored tolerance. Do not infer
+support for stochastic basis, convexity-adjusted or compounded floating
+coupons, irregular calendars/stubs, contractual cash/physical settlement
+(including par-yield cash annuity), delivery lifecycle, Bermudan
+exercise, term-structured parameters, multi-factor rates, or independent
+external parity from this proof.
 
 Physical Bermudan swaptions use a separate strict route rather than extending
 the European or legacy Bermudan surface by assumption.  A request is

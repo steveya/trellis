@@ -58,7 +58,11 @@ class BermudanSwaptionTreeMarketStateLike(Protocol):
 
 
 class BermudanSwaptionSpecLike(Protocol):
-    """Spec fields consumed by the Bermudan swaption tree helpers."""
+    """Spec fields consumed by the Bermudan swaption tree helpers.
+
+    Implementations may additionally provide ``model_time_day_count``. Its
+    absence preserves the historical use of ``day_count`` for lattice times.
+    """
 
     notional: float
     strike: float
@@ -81,6 +85,7 @@ class BermudanSwaptionTreeSpec:
     day_count: DayCountConvention = DayCountConvention.ACT_360
     rate_index: str | None = None
     is_payer: bool = True
+    model_time_day_count: DayCountConvention | None = None
 
 
 @dataclass(frozen=True)
@@ -119,14 +124,23 @@ def resolve_bermudan_swaption_tree_inputs(
         raise ValueError("Bermudan swaption tree pricing requires exercise dates before swap_end")
 
     swap_start = min(exercise_dates)
-    day_count = getattr(spec, "day_count", DayCountConvention.ACT_360)
-    exercise_frequency = _infer_schedule_frequency(exercise_dates, day_count)
+    model_time_day_count = _model_time_day_count(spec)
+    exercise_frequency = _infer_schedule_frequency(
+        exercise_dates,
+        model_time_day_count,
+    )
     option_horizon = _quantize_time(
-        float(year_fraction(settlement, max(exercise_dates), day_count)),
+        float(
+            year_fraction(
+                settlement,
+                max(exercise_dates),
+                model_time_day_count,
+            )
+        ),
         frequency=exercise_frequency,
     )
     tenor = _quantize_time(
-        float(year_fraction(swap_start, spec.swap_end, day_count)),
+        float(year_fraction(swap_start, spec.swap_end, model_time_day_count)),
         frequency=_frequency_per_year(spec.swap_frequency),
     )
     tree_horizon = option_horizon + tenor
@@ -209,13 +223,18 @@ def build_bermudan_swaption_coupon_map(
         spec.swap_frequency,
         day_count=spec.day_count,
         time_origin=settlement,
+        model_time_day_count=_model_time_day_count(spec),
         label="bermudan_swaption_fixed_leg_timeline",
     )
     coupon_by_step: dict[int, float] = {}
-    exercise_frequency = _infer_schedule_frequency(_normalized_exercise_dates(spec.exercise_dates), spec.day_count)
+    model_time_day_count = _model_time_day_count(spec)
+    exercise_frequency = _infer_schedule_frequency(
+        _normalized_exercise_dates(spec.exercise_dates),
+        model_time_day_count,
+    )
     first_exercise_step = lattice_step_from_time(
         _quantize_time(
-            float(year_fraction(settlement, swap_start, spec.day_count)),
+            float(year_fraction(settlement, swap_start, model_time_day_count)),
             frequency=exercise_frequency,
         ),
         dt=dt,
@@ -227,7 +246,9 @@ def build_bermudan_swaption_coupon_map(
     frequency_per_year = _frequency_per_year(spec.swap_frequency)
     steps_per_coupon = max(1, int(round((1.0 / frequency_per_year) / dt)))
     coupon = float(spec.notional) * float(spec.strike) / frequency_per_year
-    tenor = float(year_fraction(swap_start, spec.swap_end, spec.day_count))
+    tenor = float(
+        year_fraction(swap_start, spec.swap_end, model_time_day_count)
+    )
     quantized_tenor = round(tenor * frequency_per_year) / frequency_per_year
     swap_end_step = min(
         int(round((first_exercise_step * dt + quantized_tenor) / dt)),
@@ -255,11 +276,12 @@ def build_bermudan_swaption_exercise_policy(
             exercise_steps=(),
             exercise_style="bermudan",
         )
-    frequency = _infer_schedule_frequency(exercise_dates, spec.day_count)
+    model_time_day_count = _model_time_day_count(spec)
+    frequency = _infer_schedule_frequency(exercise_dates, model_time_day_count)
     exercise_steps: list[int] = []
     for exercise_date in exercise_dates:
         quantized_time = _quantize_time(
-            float(year_fraction(settlement, exercise_date, spec.day_count)),
+            float(year_fraction(settlement, exercise_date, model_time_day_count)),
             frequency=frequency,
         )
         step = lattice_step_from_time(
@@ -320,7 +342,9 @@ def compile_bermudan_swaption_contract_spec(
         )
 
     frequency_per_year = _frequency_per_year(spec.swap_frequency)
-    tenor = float(year_fraction(swap_start, spec.swap_end, spec.day_count))
+    tenor = float(
+        year_fraction(swap_start, spec.swap_end, _model_time_day_count(spec))
+    )
     quantized_tenor = round(tenor * frequency_per_year) / frequency_per_year
     first_exercise_step = min(valid_exercise_steps)
     swap_end_step = min(
@@ -508,6 +532,14 @@ def _settlement_date(market_state, spec) -> date:
 def _frequency_per_year(frequency) -> int:
     value = getattr(frequency, "value", frequency)
     return max(int(value), 1)
+
+
+def _model_time_day_count(spec: BermudanSwaptionSpecLike) -> DayCountConvention:
+    """Return the shared lattice/model clock with a legacy day-count fallback."""
+    return (
+        getattr(spec, "model_time_day_count", None)
+        or getattr(spec, "day_count", DayCountConvention.ACT_360)
+    )
 
 
 def _infer_schedule_frequency(schedule_dates: tuple[date, ...] | list[date], day_count) -> int:

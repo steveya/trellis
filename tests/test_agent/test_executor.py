@@ -1000,8 +1000,15 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
         exercise_style="european",
         term_fields={
             "fixed_leg_day_count": "THIRTY_360",
+            "float_leg_day_count": "ACT_360",
             "rate_index": "USD-SOFR-3M",
             "payment_frequency": "SEMI_ANNUAL",
+            "float_frequency": "QUARTERLY",
+            "model_time_day_count": "THIRTY_360",
+            "tree_steps": 120,
+            "n_paths": 20_000,
+            "n_steps": 64,
+            "seed": 42,
         },
     )
 
@@ -1017,10 +1024,116 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
     assert defaults["day_count"] == "DayCountConvention.THIRTY_360"
     assert defaults["rate_index"] == "USD-SOFR-3M"
     assert defaults["swap_frequency"] == "Frequency.SEMI_ANNUAL"
+    assert defaults["float_frequency"] == "Frequency.QUARTERLY"
+    assert defaults["float_day_count"] == "DayCountConvention.ACT_360"
+    assert defaults["model_time_day_count"] == "DayCountConvention.THIRTY_360"
+    assert defaults["tree_steps"] == "120"
+    assert defaults["n_paths"] == "20000"
+    assert defaults["n_steps"] == "64"
+    assert defaults["seed"] == "42"
 
     skeleton = _generate_skeleton(hydrated, "European payer swaption")
     assert "day_count: DayCountConvention = DayCountConvention.THIRTY_360" in skeleton
     assert "rate_index: str | None = 'USD-SOFR-3M'" in skeleton
+    assert "float_frequency: Frequency | None = Frequency.QUARTERLY" in skeleton
+    assert "float_day_count: DayCountConvention | None = DayCountConvention.ACT_360" in skeleton
+    assert "model_time_day_count: DayCountConvention | None = DayCountConvention.THIRTY_360" in skeleton
+    assert "tree_steps: int | None = 120" in skeleton
+    assert "n_paths: int = 20000" in skeleton
+    assert "n_steps: int = 64" in skeleton
+    assert "seed: int = 42" in skeleton
+
+
+def test_hydrate_swaption_semantic_manifest_aliases_produces_valid_python():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _hydrate_spec_schema_defaults_from_semantics,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="Authored European payer swaption",
+        observation_schedule=("2025-11-15",),
+        preferred_method="analytical",
+        exercise_style="european",
+        term_fields={
+            "fixed_leg_day_count": "30/360",
+            "float_leg_day_count": "ACT/360",
+            "swap_frequency": "semi_annual",
+            "floating_frequency": "quarterly",
+            "model_time_day_count": "30/360",
+        },
+    )
+
+    hydrated = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["swaption"],
+        semantic_contract=contract,
+    )
+    skeleton = _generate_skeleton(hydrated, contract.description)
+
+    ast.parse(skeleton)
+    assert "swap_frequency: Frequency = Frequency.SEMI_ANNUAL" in skeleton
+    assert "day_count: DayCountConvention = DayCountConvention.THIRTY_360" in skeleton
+    assert "float_frequency: Frequency | None = Frequency.QUARTERLY" in skeleton
+    assert "float_day_count: DayCountConvention | None = DayCountConvention.ACT_360" in skeleton
+    assert "model_time_day_count: DayCountConvention | None = DayCountConvention.THIRTY_360" in skeleton
+
+
+@pytest.mark.parametrize("field_name", ["fixed_leg_day_count", "float_leg_day_count", "model_time_day_count"])
+@pytest.mark.parametrize(
+    "raw_value,member_name",
+    [
+        ("ACT/365.25", "ACT_365_25"),
+        ("30E/360 ISDA", "THIRTY_E_360_ISDA"),
+        ("ACT/ACT ICMA", "ACT_ACT_ICMA"),
+        ("BUS/252", "BUS_252"),
+        ("1/1", "ONE_ONE"),
+        ("ACT_ACT_ISDA", "ACT_ACT_ISDA"),
+        ("DayCountConvention.ACT_365_FIXED", "ACT_365_FIXED"),
+        ("ACT/365F", "ACT_365"),
+    ],
+)
+def test_hydrate_swaption_resolves_real_day_count_members(field_name, raw_value, member_name):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _generate_skeleton, _hydrate_spec_schema_defaults_from_semantics
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.conventions.day_count import DayCountConvention
+
+    contract = SimpleNamespace(product=SimpleNamespace(term_fields={field_name: raw_value}))
+    schema = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["swaption"], semantic_contract=contract,
+    )
+    namespace = {}
+    exec(_generate_skeleton(schema, "Convention hydration only"), namespace)
+    spec_field = {"fixed_leg_day_count": "day_count", "float_leg_day_count": "float_day_count"}.get(
+        field_name, field_name,
+    )
+    assert getattr(namespace["SwaptionSpec"], spec_field) is DayCountConvention[member_name]
+
+
+@pytest.mark.parametrize(
+    "field_name,raw_value",
+    [
+        ("fixed_leg_day_count", "ACT/999"),
+        ("float_leg_day_count", "DayCountConvention.UNKNOWN"),
+        ("model_time_day_count", "ACT/365; raise RuntimeError('invalid')"),
+        ("payment_frequency", "Frequency.UNKNOWN"),
+        ("float_frequency", "fortnightly"),
+    ],
+)
+def test_hydrate_swaption_rejects_unknown_conventions_before_source_generation(field_name, raw_value):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _hydrate_spec_schema_defaults_from_semantics
+    from trellis.agent.planner import STATIC_SPECS
+
+    contract = SimpleNamespace(product=SimpleNamespace(term_fields={field_name: raw_value}))
+    with pytest.raises(ValueError, match="Unsupported .* convention"):
+        _hydrate_spec_schema_defaults_from_semantics(
+            STATIC_SPECS["swaption"], semantic_contract=contract,
+        )
 
 
 def test_hydrate_spec_schema_defaults_from_weighted_nth_to_default_semantics():
@@ -1180,6 +1293,47 @@ def test_admitted_swaption_adapter_composes_resolved_inputs_with_raw_kernel():
     assert "resolve_swaption_black76_inputs(market_state, spec)" in source
     assert "price_swaption_black76_raw(resolved)" in source
     assert "price_swaption_black76(market_state" not in source
+
+
+@pytest.mark.parametrize("authored_clock", [None, "ACT/365"])
+def test_f006_generated_black_swaption_preserves_ordinary_leg_conventions(monkeypatch, authored_clock):
+    from copy import deepcopy
+    from trellis.agent.benchmark_contracts import benchmark_spec_overrides
+    from trellis.agent.executor import _generate_skeleton, _make_test_payoff, _materialize_deterministic_exact_binding_module
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state_for_task
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.models.calibration.rates import build_swaption_leg_timelines
+
+    task = deepcopy(next(task for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml") if task["id"] == "F006"))
+    assert "comparison_model_parameter_set" not in task["benchmark_contract"]
+    if authored_clock is not None:
+        task["benchmark_contract"]["model_time_day_count"] = authored_clock
+    plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.rate_style_swaption.price_swaption_black76_raw",),
+        primitive_plan=None, method="analytical", instrument_type="swaption",
+    )
+    skeleton = _generate_skeleton(STATIC_SPECS["swaption"], "European payer swaption", generation_plan=plan)
+    generated = _materialize_deterministic_exact_binding_module(skeleton, plan)
+    assert generated is not None
+    module = ModuleType("test_generated_f006_conventions")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(generated.code, module.__dict__)
+    market, _ = build_market_state_for_task(task)
+    payoff = _make_test_payoff(
+        module.SwaptionPayoff, STATIC_SPECS["swaption"], market.settlement,
+        market_state=market, spec_overrides=benchmark_spec_overrides(task),
+    )
+    spec = payoff.spec
+    assert spec.float_frequency is Frequency.QUARTERLY
+    assert spec.float_day_count is DayCountConvention.THIRTY_E_360
+    assert spec.model_time_day_count is (DayCountConvention.ACT_365 if authored_clock else None)
+    fixed, floating, clock = build_swaption_leg_timelines(spec, market)
+    assert len(fixed) == 10
+    assert len(floating) == 20
+    assert clock is (DayCountConvention.ACT_365 if authored_clock else DayCountConvention.THIRTY_E_360)
+    assert payoff.evaluate(market) > 0.0
 
 
 def test_deterministic_exact_binding_module_materializes_bermudan_lower_bound_composition():
@@ -7306,15 +7460,19 @@ def test_deterministic_exact_binding_module_composes_european_swaption_rate_latt
     assert "n_steps=resolved.n_steps" in generated.code
     assert "day_count=spec.day_count" in generated.code
     assert "swap_frequency=spec.swap_frequency" in generated.code
+    assert "model_time_day_count=spec.model_time_day_count" in generated.code
     assert "rate_index=spec.rate_index" in generated.code
     assert "is_payer=bool(spec.is_payer)" in generated.code
+    assert "tree_steps = None if spec.tree_steps is None else int(spec.tree_steps)" in generated.code
+    assert "n_steps=tree_steps" in generated.code
     assert "price_swaption_tree(" not in generated.code
     assert "build_swaption_tree_spec(" not in generated.code
     assert "price_bermudan_swaption_tree(" not in generated.code
     assert "build_bermudan_swaption_lattice(" not in generated.code
 
 
-def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo():
+@pytest.mark.parametrize("explicit_leg_conventions", [False, True])
+def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo(monkeypatch, explicit_leg_conventions):
     from trellis.agent.codegen_guardrails import PrimitiveRef
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -7433,12 +7591,22 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
     ):
         assert symbol in generated.code
     assert "swap_start = getattr(spec, \"swap_start\", None) or resolved.expiry_date" in generated.code
+    assert "fixed_payment_timeline = tuple(" in generated.code
+    assert "floating_payment_timeline = tuple(" in generated.code
+    assert "float_frequency = spec.float_frequency or spec.swap_frequency" in generated.code
+    assert "float_day_count = spec.float_day_count or spec.day_count" in generated.code
+    assert "model_time_day_count = spec.model_time_day_count or spec.day_count" in generated.code
     assert "spec.swap_frequency" in generated.code
     assert "day_count=spec.day_count" in generated.code
+    assert "float_frequency" in generated.code
+    assert "day_count=float_day_count" in generated.code
+    assert "model_time_day_count=model_time_day_count" in generated.code
+    assert "payment_timeline=fixed_payment_timeline" in generated.code
+    assert "floating_timeline=floating_payment_timeline" in generated.code
     assert "forecast_forward_curve(rate_index)" in generated.code
-    assert "n_paths = max(int(getattr(spec, \"n_paths\", 20000)), 2)" in generated.code
-    assert "n_steps = max(int(getattr(spec, \"n_steps\", 64)), 1)" in generated.code
-    assert "seed = spec.seed if hasattr(spec, \"seed\") else 42" in generated.code
+    assert "n_paths = int(spec.n_paths)" in generated.code
+    assert "n_steps = int(spec.n_steps)" in generated.code
+    assert "seed = int(spec.seed)" in generated.code
     calls = tuple(
         node
         for node in ast.walk(ast.parse(generated.code))
@@ -7462,6 +7630,35 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
     assert "price_swaption_monte_carlo(" not in generated.code
     assert "resolve_swaption_monte_carlo_problem(" not in generated.code
     assert "GBM(" not in generated.code
+
+    from trellis.core.market_state import MarketState
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+    from trellis.models.vol_surface import FlatVol
+
+    module = ModuleType("test_generated_swaption_mc_legacy_clock")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(generated.code, module.__dict__)
+    payload_calls = []
+    def capture_payload(**kwargs):
+        payload_calls.append(kwargs)
+        return build_discounted_swap_pv_payload(**kwargs)
+    module.build_discounted_swap_pv_payload = capture_payload
+    module.price_event_aware_monte_carlo = lambda *args, **kwargs: {"price": 1.0}
+    spec = module.SwaptionSpec(
+        notional=100.0, strike=0.03, expiry_date=date(2025, 1, 31),
+        swap_start=date(2025, 1, 31), swap_end=date(2026, 1, 31),
+        swap_frequency=Frequency.MONTHLY, day_count=DayCountConvention.THIRTY_360,
+        model_time_day_count=DayCountConvention.THIRTY_360 if explicit_leg_conventions else None,
+    )
+    market = MarketState(
+        as_of=date(2024, 11, 15), settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.05), vol_surface=FlatVol(0.2),
+    )
+    assert module.SwaptionPayoff(spec).evaluate(market) == 1.0
+    assert len(payload_calls) == 1
+    assert (payload_calls[0]["floating_timeline"] is not None) is explicit_leg_conventions
 
 
 @pytest.mark.parametrize(

@@ -96,8 +96,9 @@ compatibility evidence, not generated construction authority.
 T73 applies the same boundary to a European swaption Monte Carlo target. The
 route and exact binding no longer point at ``price_swaption_monte_carlo(...)``
 or ``resolve_swaption_monte_carlo_problem(...)``. They expose the reusable
-expiry resolver, explicit-start payment timeline, Hull-White process binding,
-discounted swap-PV payload, short-rate discount reducer, event/problem
+expiry resolver, explicit-start fixed and floating payment timelines on one
+authored model-time clock, Hull-White process binding, discounted swap-PV
+payload, short-rate discount reducer, event/problem
 contracts, problem compiler, and generic event-aware estimator. DSL lowering
 records those stages as an ordered ``ThenExpr`` and deterministic offline
 generation materializes the same sequence. This makes source identity and
@@ -113,6 +114,45 @@ Deterministic generation preserves the Hull-White/BDT model, explicit
 comparison parameters, conventions, and tree-step controls. The retained
 ``price_swaption_tree(...)`` wrapper remains an independent reference rather
 than the source identity of the generated artifact.
+
+The repository row for T73 now authors the economics, named market scenario,
+exercise-value/output contract, model parameters, numerical controls, reference
+target, and per-target tolerances directly. Runtime synthesis must therefore
+remain title-independent. The proof does not establish external-library
+parity, independent Black-vs-Hull-White model agreement, Bermudan exercise,
+contractual cash/physical settlement, delivery lifecycle, stochastic basis, or
+production calibration coverage. Its semantic product and obligation record
+only the positive payer underlying-swap NPV at exercise, discounted to valuation;
+they do not assert a cash-settlement method.
+The semantic timeline explicitly has no settlement dates. Family lowering
+retains the exercise-value obligation as a valuation event on the exercise
+decision date; neither family nor DSL signatures advertise a settlement role.
+This distinction survives method specialization and the Monte Carlo event
+projection. Ordinary contractual settlement obligations retain their existing
+settlement timeline semantics.
+Dictionary/YAML parsing hydrates explicit event machines, including their
+nested guards, actions, and ordered parameters, instead of leaving raw mappings
+in the typed contract. Malformed explicit machines fail rather than silently
+regenerating a different lifecycle; serialized exercise-value contracts retain
+the same strict validation as in-memory objects.
+T73's replay seed is taken from
+`cross_validate.target_contracts.hw_mc.spec_overrides.seed`, the same seed
+executed by its sole Monte Carlo target; generic task or market defaults cannot
+replace it. Exact admission rejects top-level `seed` and `simulation_seed`
+aliases. Other task seed-resolution rules remain unchanged.
+
+Generated schedule defaults resolve frequency and day-count conventions to
+verified enum members (including supported aliases). Unknown conventions fail
+closed instead of being copied into generated Python source.
+
+Per-target-only tolerance maps must cover every non-reference price target.
+Missing entries fail before comparison execution; a tolerance for one target
+cannot become an implicit global allowance for the others. Result evidence
+reports no global tolerance for these maps and retains each target's authored
+tolerance. The legacy 5% fallback for requests with no authored tolerance remains
+tracked separately in QUA-1252.
+Promotion reviews use the candidate's own authored allowance and reject missing
+or malformed allowances in per-target-only evidence.
 
 Compiled request metadata now also carries a compact semantic-blueprint summary
 for downstream tooling. That summary records the canonical lowered route, the

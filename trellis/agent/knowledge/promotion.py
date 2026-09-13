@@ -2028,7 +2028,23 @@ def review_promotion_candidate(
     price_errors = cross_validation.get("price_errors") or {}
     prices = cross_validation.get("prices") or {}
     deviations_pct = cross_validation.get("deviations_pct") or {}
-    tolerance_pct = float(cross_validation.get("tolerance_pct", 0.0) or 0.0)
+    target_tolerances = cross_validation.get("target_tolerances_pct", {})
+    legacy_default = None if "target_tolerances_pct" in cross_validation else 0.0
+    raw_tolerance = (
+        target_tolerances.get(comparison_target, cross_validation.get("tolerance_pct", legacy_default))
+        if isinstance(target_tolerances, Mapping)
+        else None
+    )
+    # Map-only comparisons deliberately have no global allowance. An invalid
+    # target allowance must reject the candidate, never fall back to a wider one.
+    try:
+        tolerance_pct = float(raw_tolerance)
+    except (TypeError, ValueError, OverflowError):
+        tolerance_pct = None
+    if tolerance_pct is not None and (
+        isinstance(raw_tolerance, bool) or not math.isfinite(tolerance_pct) or tolerance_pct < 0
+    ):
+        tolerance_pct = None
     recommended_module_path = (
         str(data.get("admission_target_module_name") or "").strip()
         or _recommended_module_path(module_path)
@@ -2219,12 +2235,13 @@ def review_promotion_candidate(
                 ),
                 _review_check(
                     "target_within_tolerance",
-                    comparison_target in deviations_pct
-                    and float(deviations_pct.get(comparison_target, tolerance_pct + 1.0)) <= tolerance_pct,
+                    tolerance_pct is not None
+                    and comparison_target in deviations_pct
+                    and float(deviations_pct[comparison_target]) <= tolerance_pct,
                     f"`{comparison_target}` stayed within configured tolerance",
                     failure_detail=(
                         f"deviation for `{comparison_target}` was {deviations_pct.get(comparison_target)!r} "
-                        f"with tolerance {tolerance_pct}"
+                        f"with tolerance {raw_tolerance!r}"
                     ),
                 ),
             ]

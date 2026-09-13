@@ -444,6 +444,7 @@ def build_timed_event_aware_monte_carlo_problem_from_family_ir(
 def build_discounted_swap_pv_payload(
     *,
     payment_timeline: Iterable[SchedulePeriod],
+    floating_timeline: Iterable[SchedulePeriod] | None = None,
     discount_curve,
     forward_curve=None,
     exercise_time: float,
@@ -454,10 +455,29 @@ def build_discounted_swap_pv_payload(
     is_payer: bool = True,
     anchor_short_rate: float | None = None,
 ) -> Mapping[str, object]:
-    """Build one shared settlement payload for the `discounted_swap_pv` rule."""
+    """Build one shared settlement payload for the `discounted_swap_pv` rule.
+
+    ``payment_timeline`` is the fixed leg. A separate floating timeline may
+    carry its own reset frequency and accrual convention while retaining the
+    same model-time coordinate. An explicit ``floating_timeline`` converts
+    time-based curve forwards on their model clock. Omitting it preserves the
+    historical single-timeline conversion that multiplies each forward by the
+    supplied accrual fraction. Pass the same timeline explicitly for both legs
+    to use model-clock conversion with identical schedules.
+    """
     periods = tuple(payment_timeline or ())
     if not periods:
         raise ValueError("discounted_swap_pv payload requires at least one payment period")
+    legacy_single_timeline = floating_timeline is None
+    floating_periods = (
+        periods
+        if legacy_single_timeline
+        else tuple(floating_timeline)
+    )
+    if not floating_periods:
+        raise ValueError(
+            "discounted_swap_pv payload requires at least one floating payment period"
+        )
 
     reducer_name = str(discount_reducer_name).strip()
     if not reducer_name:
@@ -469,7 +489,6 @@ def build_discounted_swap_pv_payload(
     accrual_fractions: list[float] = []
     anchor_discount_factors: list[float] = []
     annuity = 0.0
-    forecast_float_leg = 0.0
 
     for period in periods:
         t_payment = (
@@ -493,17 +512,61 @@ def build_discounted_swap_pv_payload(
         accrual_fractions.append(accrual)
         anchor_discount_factors.append(anchor_df)
         annuity += accrual * ratio
-        if forward_curve is not None:
-            if hasattr(forward_curve, "forward_rate"):
-                forward_rate = float(forward_curve.forward_rate(t_start, t_end))
-            else:
-                start_df = max(float(forward_curve.discount(t_start)), 1e-12)
-                end_df = max(float(forward_curve.discount(t_end)), 1e-12)
-                forward_rate = (start_df / end_df - 1.0) / max(t_end - t_start, 1e-12)
-            forecast_float_leg += forward_rate * accrual * ratio
 
     if not payment_times:
         raise ValueError("discounted_swap_pv payload requires payment periods after exercise_time")
+
+    floating_start_times: list[float] = []
+    floating_end_times: list[float] = []
+    floating_payment_times: list[float] = []
+    floating_accrual_fractions: list[float] = []
+    floating_anchor_discount_factors: list[float] = []
+    forecast_float_leg = 0.0
+    for period in floating_periods:
+        t_payment = (
+            float(period.t_payment)
+            if period.t_payment is not None
+            else float(period.t_end if period.t_end is not None else 0.0)
+        )
+        if t_payment <= exercise_time:
+            continue
+        t_start = float(period.t_start if period.t_start is not None else exercise_time)
+        t_end = float(period.t_end if period.t_end is not None else t_payment)
+        accrual = float(
+            period.accrual_fraction
+            if period.accrual_fraction is not None
+            else max(t_end - t_start, 0.0)
+        )
+        anchor_df = max(float(discount_curve.discount(t_payment)), 1e-12)
+        ratio = anchor_df / anchor_discount_to_exercise
+
+        floating_start_times.append(t_start)
+        floating_end_times.append(t_end)
+        floating_payment_times.append(t_payment)
+        floating_accrual_fractions.append(accrual)
+        floating_anchor_discount_factors.append(anchor_df)
+        if forward_curve is not None:
+            if hasattr(forward_curve, "forward_rate"):
+                forward_rate = float(forward_curve.forward_rate(t_start, t_end))
+                # Explicit floating schedules use the curve's model clock;
+                # omitted schedules retain the original accrual conversion.
+                coupon_amount = forward_rate * (
+                    accrual if legacy_single_timeline else t_end - t_start
+                )
+            else:
+                start_df = max(float(forward_curve.discount(t_start)), 1e-12)
+                end_df = max(float(forward_curve.discount(t_end)), 1e-12)
+                coupon_amount = start_df / end_df - 1.0
+                if legacy_single_timeline:
+                    coupon_amount = (
+                        coupon_amount / max(t_end - t_start, 1e-12) * accrual
+                    )
+            forecast_float_leg += coupon_amount * ratio
+
+    if not floating_payment_times:
+        raise ValueError(
+            "discounted_swap_pv payload requires floating payment periods after exercise_time"
+        )
 
     discount_par_rate = 0.0
     if annuity > 1e-12:
@@ -525,6 +588,13 @@ def build_discounted_swap_pv_payload(
             "accrual_fractions": tuple(accrual_fractions),
             "anchor_discount_to_exercise": float(anchor_discount_to_exercise),
             "anchor_discount_factors": tuple(anchor_discount_factors),
+            "floating_start_times": tuple(floating_start_times),
+            "floating_end_times": tuple(floating_end_times),
+            "floating_payment_times": tuple(floating_payment_times),
+            "floating_accrual_fractions": tuple(floating_accrual_fractions),
+            "floating_anchor_discount_factors": tuple(
+                floating_anchor_discount_factors
+            ),
             "discount_reducer_name": reducer_name,
             "mean_reversion": float(mean_reversion),
             "anchor_short_rate": float(anchor_short_rate),

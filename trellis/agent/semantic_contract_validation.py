@@ -34,6 +34,10 @@ from trellis.agent.semantic_contracts import (
     _PHYSICAL_BERMUDAN_FREQUENCIES,
     _PHYSICAL_BERMUDAN_ROLL_CONVENTIONS,
     _PHYSICAL_BERMUDAN_STUB_RULES,
+    _SWAPTION_EXERCISE_VALUE_CONVENTION,
+    _SWAPTION_EXERCISE_VALUE_TRANSITIONS,
+    _derive_event_machine,
+    _swaption_exercise_value_term_errors,
     SemanticContract,
     parse_semantic_contract,
 )
@@ -1427,7 +1431,17 @@ def _validate_obligations(
             errors.append(
                 f"Typed obligation `{obligation.obligation_id or '<unknown>'}` must define amount_expression."
             )
-    if settlement_rules and settle_rules and not any(rule in settle_rules for rule in settlement_rules):
+    exercise_value_obligation = (
+        product.semantic_id == "rate_style_swaption"
+        and product.settlement_rule == "exercise_value_only"
+        and product.maturity_settlement_rule == "exercise_value_only"
+        and settle_rules == {"exercise_date"}
+    )
+    if (
+        settlement_rules and settle_rules
+        and not any(rule in settle_rules for rule in settlement_rules)
+        and not exercise_value_obligation
+    ):
         warnings.append(
             "Typed obligations are present but do not mirror the legacy settlement_rule exactly."
         )
@@ -2677,6 +2691,49 @@ def _validate_rate_style_swaption_shape(
     warnings: list[str],
 ) -> None:
     """Validate a simple rate-style swaption semantic shape."""
+    product = contract.product
+    terms = dict(product.term_fields)
+    exercise_value_only = (
+        "exercise_value_convention" in terms
+        or product.settlement_rule == "exercise_value_only"
+        or product.maturity_settlement_rule == "exercise_value_only"
+    )
+    if exercise_value_only:
+        errors.extend(_swaption_exercise_value_term_errors(
+            terms,
+            exercise_style=product.exercise_style,
+            observation_schedule=tuple(product.observation_schedule),
+        ))
+        if product.maturity_settlement_rule != "exercise_value_only":
+            errors.append("Swaption exercise-value mode cannot declare maturity settlement.")
+        if product.timeline.settlement_dates:
+            errors.append("Swaption exercise-value mode cannot declare settlement dates.")
+        if tuple(product.timeline.decision_dates) != tuple(product.observation_schedule):
+            errors.append("Swaption exercise-value mode must retain its exact exercise decision date.")
+        obligations = tuple(product.obligations)
+        if len(obligations) != 1 or (
+            obligations[0].obligation_id,
+            obligations[0].settle_date_rule,
+            obligations[0].amount_expression,
+            obligations[0].settlement_kind,
+            obligations[0].trigger,
+        ) != (
+            "exercise_value", "exercise_date", _SWAPTION_EXERCISE_VALUE_CONVENTION,
+            "valuation", "holder_exercises_swaption",
+        ):
+            errors.append(
+                "Swaption exercise-value mode requires one positive underlying-swap "
+                "NPV valuation obligation at exercise."
+            )
+        if tuple(product.event_transitions) != _SWAPTION_EXERCISE_VALUE_TRANSITIONS or (
+            product.event_machine != _derive_event_machine(
+                _SWAPTION_EXERCISE_VALUE_TRANSITIONS,
+                state_dependence="schedule_dependent",
+            )
+        ):
+            errors.append(
+                "Swaption exercise-value mode requires valuation-only exercise events."
+            )
     _validate_market_capabilities(
         contract,
         errors,
@@ -2689,7 +2746,9 @@ def _validate_rate_style_swaption_shape(
         expected_payoff_family="swaption",
         expected_underlier_structure="single_curve_rate_style",
         expected_payoff_rule="swaption_exercise_payoff",
-        expected_settlement_rule="cash_settle_at_exercise",
+        expected_settlement_rule=(
+            "exercise_value_only" if exercise_value_only else "cash_settle_at_exercise"
+        ),
         expected_exercise_style=None,
         expected_multi_asset=False,
         require_schedule=True,

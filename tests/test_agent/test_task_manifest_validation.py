@@ -72,6 +72,140 @@ def _legacy_callable_task(task_id: str):
     )
 
 
+def _authored_legacy_swaption_task():
+    common_target = {
+        "payoff_family": "swaption",
+        "exercise_style": "european",
+        "model_family": "interest_rate",
+        "underlying_asset_class": "rate",
+        "observation_style": "fixed_schedule",
+    }
+    return {
+        "id": "T73",
+        "title": "European swaption: Black76 vs HW tree vs HW MC",
+        "status": "pending",
+        "task_definition_manifest": "TASKS_PROOF_LEGACY.yaml",
+        "description": (
+            "Price the authored USD payer European swaption exercise-value proof with "
+            "Black76, a Hull-White tree, and seeded Hull-White Monte Carlo. "
+            "Report holder present value in USD and compare Black76 and Monte "
+            "Carlo with the Hull-White tree under their authored target tolerances."
+        ),
+        "instrument_type": "swaption",
+        "task_disposition": "executable_pricing",
+        "market_scenario_id": "usd_european_swaption_proof",
+        "validation_policy": "invariants_and_cross_method",
+        "construct": ["analytical", "lattice", "monte_carlo"],
+        "new_component": None,
+        "benchmark_contract": {
+            "product": "swaption",
+            "style": "european",
+            "payer_receiver": "payer",
+            "exercise_value_convention": "positive_payer_underlying_swap_npv",
+            "currency": "USD",
+            "notional": 1_000_000.0,
+            "settle_date": "2024-11-15",
+            "exercise_date": "2025-11-15",
+            "swap_start_date": "2025-11-15",
+            "maturity_date": "2030-11-15",
+            "fixed_coupon": 0.03,
+            "fixed_coupon_unit": "decimal_annual_rate",
+            "fixed_frequency": "semi_annual",
+            "fixed_day_count": "30/360",
+            "float_frequency": "quarterly",
+            "float_day_count": "ACT/360",
+            "model_time_day_count": "30/360",
+            "rate_index": "USD-SOFR-3M",
+            "discount_curve_id": "usd_ois",
+            "forecast_curve_id": "USD-SOFR-3M",
+            "black_vol_surface_id": "usd_rates_smile",
+            "comparison_model_name": "hull_white_1f",
+            "comparison_model_parameter_set": "t73_hull_white_1f",
+            "comparison_mean_reversion": 0.05,
+            "comparison_sigma": 0.01,
+            "comparison_sigma_unit": "absolute_decimal_rate",
+            "comparison_quote_family": "implied_vol",
+            "comparison_quote_convention": "black",
+            "comparison_quote_subject": "swaption",
+            "valuation_measure": "holder_present_value",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "tolerance_unit": "percent_of_reference_price",
+        },
+        "cross_validate": {
+            "internal": ["black76", "hw_tree", "hw_mc"],
+            "reference_target": "hw_tree",
+            "relations": {
+                "black76": "within_tolerance",
+                "hw_mc": "within_tolerance",
+            },
+            "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0},
+            "tolerance_unit": "percent_of_reference_price",
+            "output_unit": "currency_amount",
+            "output_currency": "USD",
+            "target_contracts": {
+                "black76": {
+                    "method": "analytical",
+                    "route_id": "analytical_black76",
+                    "route_family": "analytical",
+                    "backend_binding_id": (
+                        "trellis.models.rate_style_swaption.price_swaption_black76_raw"
+                    ),
+                    "variant_parameters": {
+                        "pricing_model": "black76",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                        "quote_family": "implied_vol",
+                        "quote_convention": "black",
+                        "quote_subject": "swaption",
+                    },
+                    "validation_bundle_id": "analytical:swaption",
+                    **common_target,
+                },
+                "hw_tree": {
+                    "method": "rate_tree",
+                    "route_id": "rate_tree_backward_induction",
+                    "route_family": "rate_lattice",
+                    "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+                    "variant_parameters": {
+                        "pricing_model": "hull_white_1f",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                    },
+                    "spec_overrides": {"tree_steps": 120},
+                    "validation_bundle_id": "rate_tree:swaption",
+                    **common_target,
+                },
+                "hw_mc": {
+                    "method": "monte_carlo",
+                    "route_id": "monte_carlo_paths",
+                    "route_family": "monte_carlo",
+                    "backend_binding_id": (
+                        "trellis.models.monte_carlo.event_aware."
+                        "price_event_aware_monte_carlo"
+                    ),
+                    "variant_parameters": {
+                        "process": "hull_white_1f",
+                        "model_parameter_set": "t73_hull_white_1f",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                        "sampling": "pseudo_random",
+                    },
+                    "spec_overrides": {
+                        "n_paths": 20_000,
+                        "n_steps": 64,
+                        "seed": 42,
+                    },
+                    "validation_bundle_id": "monte_carlo:swaption",
+                    **common_target,
+                },
+            },
+        },
+    }
+
+
 def _extension_task(task_id: str):
     root = Path(__file__).resolve().parents[2]
     payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
@@ -1229,6 +1363,124 @@ def test_validated_legacy_expected_honest_block_is_admitted_for_runtime():
     assert_executable_task_selection([_legacy_expected_block_task()])
 
 
+def _generic_legacy_comparison_task():
+    task = _authored_legacy_swaption_task()
+    task.update(id="T900", title="Generic authored comparison")
+    task.pop("validation_policy")
+    return task
+
+
+@pytest.mark.parametrize("has_validation_policy", (False, True))
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 0.1}},
+        {"target_tolerances_pct": {"hw_tree": 0.1}},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0, "unknown": 1.0}},
+        {"target_tolerances_pct": {"unknown": 1.0}, "tolerance_pct": 1.0},
+        {"target_tolerances_pct": {}},
+        {"target_tolerances_pct": None},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}, "reference_target": "unknown"},
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": True}},
+    ),
+)
+def test_generic_legacy_target_tolerance_drift_fails_admission(
+    acceptance, has_validation_policy
+):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError, assert_executable_task_selection,
+    )
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"].update(acceptance)
+    if has_validation_policy:
+        task["validation_policy"] = "invariants_and_cross_method"
+
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        assert_executable_task_selection([task])
+
+
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}},
+        {"target_tolerances_pct": {"black76": 0.1}, "tolerance_pct": 3.0},
+        {"target_tolerances_pct": {}, "tolerance_pct": 3.0},
+    ),
+)
+def test_generic_legacy_admission_matches_runtime_tolerance_coverage(acceptance):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"].update(acceptance)
+
+    assert_executable_task_selection([task])
+    plan = build_comparison_harness_plan(task)
+    assert plan.reference_target == "hw_tree"
+    assert dict(plan.target_tolerances_pct) == acceptance["target_tolerances_pct"]
+    assert plan.tolerance_pct == acceptance.get("tolerance_pct")
+
+
+@pytest.mark.parametrize("has_validation_policy", (False, True))
+@pytest.mark.parametrize("construct", (["rate_tree", 7], [None], 42, {"rate_tree": 1}))
+def test_generic_target_tolerance_admission_rejects_malformed_construct(
+    construct, has_validation_policy
+):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError, assert_executable_task_selection,
+    )
+
+    task = _generic_legacy_comparison_task()
+    task["construct"] = construct
+    if has_validation_policy:
+        task["validation_policy"] = "invariants_and_cross_method"
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        assert_executable_task_selection([task])
+
+
+@pytest.mark.global_workflow
+def test_incomplete_target_tolerances_stop_before_market_or_build(monkeypatch, tmp_path):
+    from scripts import run_tasks
+    from trellis.agent.task_manifest_validation import TaskManifestValidationError
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"]["target_tolerances_pct"].pop("hw_mc")
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append("unexpected execution")
+        pytest.fail("invalid tolerance coverage must fail before execution")
+
+    monkeypatch.setattr(run_tasks, "build_market_state", forbidden)
+    monkeypatch.setattr(run_tasks, "run_task", forbidden)
+    with pytest.raises(TaskManifestValidationError, match="legacy.missing_acceptance_contract"):
+        run_tasks.run_block([task], str(tmp_path / "results.json"))
+    assert calls == []
+    assert not (tmp_path / "results.json").exists()
+
+
+@pytest.mark.parametrize(
+    "comparison,reference",
+    (
+        ({"internal": ["hw_tree", "hw_mc"], "analytical": "black76",
+          "target_tolerances_pct": {"hw_tree": 0.1, "hw_mc": 3.0}}, "black76"),
+        ({"reference_target": "rate_tree",
+          "target_tolerances_pct": {"analytical": 0.1, "monte_carlo": 3.0}}, "rate_tree"),
+        ({"internal": ["black76", "hw_tree", "hw_mc"], "reference": "hw_tree",
+          "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0}}, "hw_tree"),
+    ),
+)
+def test_generic_tolerance_admission_reuses_runtime_reference_resolution(comparison, reference):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    task = _generic_legacy_comparison_task()
+    task["cross_validate"] = comparison
+    assert_executable_task_selection([task])
+    assert build_comparison_harness_plan(task).reference_target == reference
+
+
 @pytest.mark.parametrize("task_id", ("T30", "T96"))
 def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
@@ -1247,6 +1499,119 @@ def test_authored_legacy_callable_comparisons_are_admitted_for_runtime(task_id):
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
     assert_executable_task_selection([_legacy_callable_task(task_id)])
+
+
+def test_t73_repository_row_is_the_exact_authored_swaption_contract():
+    from trellis.agent.task_manifests import load_task_manifest
+
+    actual = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+    expected = _authored_legacy_swaption_task()
+
+    for field in (
+        "description",
+        "instrument_type",
+        "task_disposition",
+        "market_scenario_id",
+        "validation_policy",
+        "construct",
+        "new_component",
+        "benchmark_contract",
+        "cross_validate",
+    ):
+        assert actual.get(field) == expected[field]
+
+
+def test_authored_legacy_swaption_comparison_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_authored_legacy_swaption_task()])
+
+
+def test_materialized_t73_market_is_admitted_for_runtime():
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+    from trellis.agent.task_manifests import load_task_manifest
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T73"
+    )
+
+    assert task.get("market")
+    assert_executable_task_selection([task])
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda task: task["benchmark_contract"].__setitem__("notional", 100.0),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "settle_date", "2024-11-16"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "swap_start_date", "2025-11-16"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "fixed_day_count", "30E/360"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "float_day_count", "30/360"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "model_time_day_count", "ACT/365F"
+        ),
+        lambda task: task.__setitem__("market_scenario_id", "usd_flat"),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_mean_reversion", 0.10
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_model_parameter_set", "other"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "fixed_coupon_unit", "percent_annual_rate"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "comparison_sigma_unit", "relative_rate"
+        ),
+        lambda task: task["benchmark_contract"].__setitem__(
+            "settlement_type", "physical"
+        ),
+        lambda task: task["cross_validate"].__setitem__(
+            "reference_target", "black76"
+        ),
+        lambda task: task["cross_validate"]["target_tolerances_pct"].__setitem__(
+            "black76", 1.0
+        ),
+        lambda task: task["cross_validate"]["target_contracts"]["hw_tree"][
+            "spec_overrides"
+        ].__setitem__("tree_steps", 200),
+        lambda task: task["cross_validate"]["target_contracts"]["hw_mc"][
+            "spec_overrides"
+        ].__setitem__("n_paths", 10_000),
+        lambda task: task["cross_validate"].__setitem__(
+            "external", ["quantlib"]
+        ),
+    ),
+)
+def test_legacy_swaption_comparison_rejects_exact_contract_drift(mutation):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_authored_legacy_swaption_task())
+    mutation(task)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.swaption_invalid_contract" in _codes(exc_info.value.report)
 
 
 @pytest.mark.parametrize(

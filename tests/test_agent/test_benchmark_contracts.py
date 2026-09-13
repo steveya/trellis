@@ -448,6 +448,107 @@ def test_t102_terminal_basket_harness_reports_authored_acceptance_and_mc_control
     assert _legacy_tasks()["T102"]["benchmark_contract"]["num_assets"] == 2
 
 
+def test_t73_swaption_renders_and_hydrates_without_title_defaults():
+    task = _legacy_tasks()["T73"]
+    renamed = deepcopy(task)
+    renamed["title"] = "Display label without product or model cues"
+
+    description = benchmark_request_description(renamed, root=ROOT)
+    overrides = benchmark_spec_overrides(renamed, root=ROOT)
+
+    assert canonical_benchmark_instrument_type(renamed) == "swaption"
+    assert description == benchmark_request_description(task, root=ROOT)
+    assert "Build a pricer for: European payer swaption" in description
+    assert "Valuation date: 2024-11-15." in description
+    assert "Notional: 1000000.0 USD." in description
+    assert "Expiry: 2025-11-15." in description
+    assert "Swap start: 2025-11-15. Swap end: 2030-11-15." in description
+    assert "Fixed leg: semi_annual, 30/360." in description
+    assert "Float leg: quarterly USD-SOFR-3M, ACT/360." in description
+    assert "Model time day count: 30/360." in description
+    assert "Market curves: discount=usd_ois, forecast=USD-SOFR-3M." in description
+    assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
+    assert "Exercise value convention: positive_payer_underlying_swap_npv." in description
+    assert "No contractual settlement convention or delivery lifecycle is modeled." in description
+    assert "Valuation measure: holder_present_value in USD currency_amount." in description
+    assert overrides == {
+        "notional": pytest.approx(1_000_000.0),
+        "strike": pytest.approx(0.03),
+        "valuation_date": date(2024, 11, 15),
+        "expiry_date": date(2025, 11, 15),
+        "swap_start": date(2025, 11, 15),
+        "swap_end": date(2030, 11, 15),
+        "swap_frequency": Frequency.SEMI_ANNUAL,
+        "day_count": DayCountConvention.THIRTY_360,
+        "float_frequency": Frequency.QUARTERLY,
+        "float_day_count": DayCountConvention.ACT_360,
+        "model_time_day_count": DayCountConvention.THIRTY_360,
+        "rate_index": "USD-SOFR-3M",
+        "is_payer": True,
+        "exercise_value_convention": "positive_payer_underlying_swap_npv",
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+    }
+
+
+def test_t73_swaption_harness_preserves_target_acceptance_and_controls():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    task = _legacy_tasks()["T73"]
+    plan = build_comparison_harness_plan(task)
+    targets = {target.target_id: target for target in plan.targets}
+
+    assert plan.reference_target == "hw_tree"
+    assert plan.target_tolerances_pct == {"black76": 0.1, "hw_mc": 3.0}
+    assert set(targets) == {"black76", "hw_tree", "hw_mc"}
+    assert targets["black76"].relation == "within_tolerance"
+    assert targets["hw_tree"].is_reference is True
+    assert targets["hw_mc"].relation == "within_tolerance"
+    assert targets["black76"].contract.contract_id == (
+        "comparison-target:T73:black76:v1"
+    )
+    assert targets["hw_tree"].contract.contract_id == (
+        "comparison-target:T73:hw_tree:v1"
+    )
+    assert targets["hw_mc"].contract.contract_id == "comparison-target:T73:hw_mc:v1"
+    assert targets["hw_tree"].contract.spec_overrides == {"tree_steps": 120}
+    assert targets["hw_mc"].contract.spec_overrides == {
+        "n_paths": 20_000,
+        "n_steps": 64,
+        "seed": 42,
+    }
+    assert "external" not in task["cross_validate"]
+
+
+def test_t73_named_proof_scenario_supplies_exact_rates_vol_and_hw_parameters():
+    from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+    task = _legacy_tasks()["T73"]
+    scenario = load_market_scenario_contracts(root=ROOT)[task["market_scenario_id"]]
+
+    assert scenario.as_of == date(2024, 11, 15)
+    assert scenario.valuation_date == date(2024, 11, 15)
+    assert scenario.domestic_rate == pytest.approx(0.04)
+    assert scenario.forecast_rate == pytest.approx(0.0425)
+    assert scenario.black_vol == pytest.approx(0.20)
+    assert dict(scenario.selected_components) == {
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+        "vol_surface": "usd_rates_smile",
+    }
+    assert scenario.model_parameter_sets == {
+        "t73_hull_white_1f": {
+            "parameter_set_name": "t73_hull_white_1f",
+            "model_family": "hull_white",
+            "mean_reversion": 0.05,
+            "sigma": 0.01,
+            "sigma_unit": "absolute_decimal_rate",
+            "source_kind": "explicit_proof_fixture",
+        }
+    }
+
+
 @pytest.mark.parametrize("task_id", ("T02", "T17"))
 def test_callable_proof_fixture_renders_and_hydrates_without_hidden_defaults(task_id):
     task = _legacy_tasks()[task_id]
@@ -787,6 +888,8 @@ def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():
     assert swaption["swap_end"] == date(2030, 11, 15)
     assert swaption["swap_frequency"] is Frequency.SEMI_ANNUAL
     assert swaption["day_count"] is DayCountConvention.THIRTY_E_360
+    assert swaption["float_frequency"] is Frequency.QUARTERLY
+    assert swaption["float_day_count"] is DayCountConvention.THIRTY_E_360
     assert swaption["is_payer"] is True
 
     cds = benchmark_spec_overrides(tasks["F007"], root=ROOT)

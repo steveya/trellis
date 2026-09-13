@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
-from trellis.core.date_utils import year_fraction
+from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.differentiable import gradient
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.resolver import resolve_market_snapshot
 from trellis.models.rate_style_swaption import (
@@ -18,6 +19,7 @@ from trellis.models.rate_style_swaption import (
     price_swaption_black76_raw,
     price_swaption_black76,
     resolve_swaption_black76_inputs,
+    resolve_swaption_curve_basis_spread,
     resolve_swaption_monte_carlo_problem,
 )
 from trellis.models.rate_style_swaption_tree import (
@@ -53,6 +55,23 @@ class _EuropeanCurveSpec:
     from trellis.core.types import DayCountConvention, Frequency
     swap_frequency = Frequency.SEMI_ANNUAL
     day_count = DayCountConvention.ACT_360
+    rate_index = "USD-SOFR-3M"
+    is_payer = True
+
+
+class _DualLegEuropeanCurveSpec:
+    """Bounded T73 economics with distinct coupon and model-time conventions."""
+
+    notional = 1_000_000.0
+    strike = 0.03
+    expiry_date = date(2025, 11, 15)
+    swap_start = expiry_date
+    swap_end = date(2030, 11, 15)
+    swap_frequency = Frequency.SEMI_ANNUAL
+    day_count = DayCountConvention.THIRTY_360
+    float_frequency = Frequency.QUARTERLY
+    float_day_count = DayCountConvention.ACT_360
+    model_time_day_count = DayCountConvention.THIRTY_360
     rate_index = "USD-SOFR-3M"
     is_payer = True
 
@@ -101,9 +120,77 @@ def _finite_difference(fn, x, eps=1e-6):
     return (fn(x + eps) - fn(x - eps)) / (2.0 * eps)
 
 
+def _payment_timeline_with_model_times(
+    *,
+    start: date,
+    end: date,
+    frequency: Frequency,
+    accrual_day_count: DayCountConvention,
+    model_time_day_count: DayCountConvention,
+):
+    """Build an independent expected leg timeline for dual-convention tests."""
+    return tuple(
+        replace(
+            period,
+            t_start=year_fraction(SETTLE, period.start_date, model_time_day_count),
+            t_end=year_fraction(SETTLE, period.end_date, model_time_day_count),
+            t_payment=year_fraction(SETTLE, period.payment_date, model_time_day_count),
+        )
+        for period in build_payment_timeline(
+            start,
+            end,
+            frequency,
+            day_count=accrual_day_count,
+        )
+    )
+
+
 def test_price_swaption_black76_is_positive():
     price = price_swaption_black76(_market_state(), _EuropeanSpec())
     assert price > 0.0
+
+
+@pytest.mark.parametrize("explicit_conventions", [False, True])
+def test_month_end_swaption_preserves_legacy_accrual_conversion(explicit_conventions):
+    from trellis.models.calibration.rates import build_swaption_leg_timelines, swaption_terms
+    from trellis.models.monte_carlo.event_aware import build_discounted_swap_pv_payload
+
+    class MonthEndSpec(_EuropeanSpec):
+        expiry_date = date(2025, 1, 31)
+        swap_start = expiry_date
+        swap_end = date(2026, 1, 31)
+        swap_frequency = Frequency.MONTHLY
+        day_count = DayCountConvention.THIRTY_360
+
+    spec = MonthEndSpec()
+    if explicit_conventions:
+        spec.model_time_day_count = DayCountConvention.THIRTY_360
+    market = _market_state()
+    fixed, floating, clock = build_swaption_leg_timelines(spec, market)
+    assert any(abs(period.accrual_fraction - (period.t_end - period.t_start)) > 1e-6 for period in floating)
+    annuity = sum(period.accrual_fraction * market.discount.discount(period.t_payment) for period in fixed)
+    expected_float_pv = sum(
+        market.forward_curve.forward_rate(period.t_start, period.t_end)
+        * (period.t_end - period.t_start if explicit_conventions else period.accrual_fraction)
+        * market.discount.discount(period.t_payment)
+        for period in floating
+    )
+    assert swaption_terms(spec, market)[2] == pytest.approx(expected_float_pv / annuity, abs=1e-14)
+
+    expected_payload = build_discounted_swap_pv_payload(
+        payment_timeline=tuple(fixed),
+        floating_timeline=tuple(floating) if explicit_conventions else None,
+        discount_curve=market.discount, forward_curve=market.forward_curve,
+        exercise_time=year_fraction(SETTLE, spec.expiry_date, clock),
+        discount_reducer_name="curve_basis_only", mean_reversion=0.0,
+        strike=spec.strike, notional=spec.notional, is_payer=spec.is_payer,
+        anchor_short_rate=0.05,
+    )
+    expected_basis = expected_payload["curve_basis_spread"]
+    assert resolve_swaption_curve_basis_spread(market, spec) == pytest.approx(expected_basis, abs=1e-14)
+    problem = resolve_swaption_monte_carlo_problem(market, spec, mean_reversion=0.0, sigma=0.01)
+    payload = next(event.payload for event in problem.event_timeline.events if event.name == "swaption_settlement")
+    assert payload["curve_basis_spread"] == pytest.approx(expected_basis, abs=1e-14)
 
 
 def test_price_swaption_black76_raw_matches_public_wrapper():
@@ -132,6 +219,108 @@ def test_resolve_swaption_black76_inputs_respects_explicit_swap_start():
         rel=1e-9,
         abs=1e-9,
     )
+
+
+def test_resolve_swaption_black76_inputs_uses_dual_leg_conventions_on_one_model_clock():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.0425, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+    )
+    spec = _DualLegEuropeanCurveSpec()
+
+    resolved = resolve_swaption_black76_inputs(market_state, spec)
+    fixed_timeline = _payment_timeline_with_model_times(
+        start=spec.swap_start,
+        end=spec.swap_end,
+        frequency=spec.swap_frequency,
+        accrual_day_count=spec.day_count,
+        model_time_day_count=spec.model_time_day_count,
+    )
+    floating_timeline = _payment_timeline_with_model_times(
+        start=spec.swap_start,
+        end=spec.swap_end,
+        frequency=spec.float_frequency,
+        accrual_day_count=spec.float_day_count,
+        model_time_day_count=spec.model_time_day_count,
+    )
+    expected_annuity = sum(
+        float(period.accrual_fraction)
+        * float(market_state.discount.discount(float(period.t_payment)))
+        for period in fixed_timeline
+    )
+    forecast_curve = market_state.forecast_curves[spec.rate_index]
+    expected_float_pv = sum(
+        (
+            float(forecast_curve.discount(float(period.t_start)))
+            / float(forecast_curve.discount(float(period.t_end)))
+            - 1.0
+        )
+        * float(market_state.discount.discount(float(period.t_payment)))
+        for period in floating_timeline
+    )
+
+    assert len(fixed_timeline) == 10
+    assert len(floating_timeline) == 20
+    assert fixed_timeline[0].accrual_fraction == pytest.approx(0.5)
+    assert floating_timeline[0].accrual_fraction == pytest.approx(92.0 / 360.0)
+    assert fixed_timeline[0].t_payment == pytest.approx(1.5)
+    assert floating_timeline[0].t_payment == pytest.approx(1.25)
+    assert resolved.expiry_years == pytest.approx(1.0)
+    assert resolved.payment_count == len(fixed_timeline)
+    assert resolved.annuity == pytest.approx(expected_annuity, rel=1e-13, abs=1e-13)
+    assert resolved.forward_swap_rate == pytest.approx(
+        expected_float_pv / expected_annuity,
+        rel=1e-13,
+        abs=1e-13,
+    )
+
+
+def test_dual_leg_same_curve_float_pv_telescopes_without_artificial_basis():
+    curve = YieldCurve.flat(0.04, max_tenor=10.0)
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=curve,
+        forecast_curves={"USD-SOFR-3M": curve},
+        vol_surface=FlatVol(0.20),
+    )
+    spec = _DualLegEuropeanCurveSpec()
+
+    resolved = resolve_swaption_black76_inputs(market_state, spec)
+
+    # With matching curves and payment at reset end, simple floating coupons
+    # telescope regardless of the coupon's annualization convention.
+    expected_float_pv = float(curve.discount(1.0) - curve.discount(6.0))
+    assert resolved.forward_swap_rate * resolved.annuity == pytest.approx(
+        expected_float_pv, rel=1e-13, abs=1e-13
+    )
+    assert resolve_swaption_curve_basis_spread(market_state, spec) == pytest.approx(
+        0.0, abs=1e-13
+    )
+
+
+def test_resolve_swaption_black76_inputs_preserves_legacy_single_timeline_fallback():
+    class _ExplicitLegacyEquivalent(_EuropeanCurveSpec):
+        float_frequency = _EuropeanCurveSpec.swap_frequency
+        float_day_count = _EuropeanCurveSpec.day_count
+        model_time_day_count = _EuropeanCurveSpec.day_count
+
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.042, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.046, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+    )
+
+    legacy = resolve_swaption_black76_inputs(market_state, _EuropeanCurveSpec())
+    explicit = resolve_swaption_black76_inputs(market_state, _ExplicitLegacyEquivalent())
+
+    assert legacy.forward_swap_rate == pytest.approx(explicit.forward_swap_rate, abs=1e-15)
+    assert replace(legacy, forward_swap_rate=explicit.forward_swap_rate) == explicit
 
 
 def test_price_swaption_black76_raw_receiver_branch_matches_black76_put():
@@ -209,10 +398,39 @@ def test_build_swaption_tree_spec_maps_single_exercise_surface():
     assert tree_spec.swap_end == _EuropeanSpec.swap_end
     assert tree_spec.rate_index == _EuropeanSpec.rate_index
     assert tree_spec.is_payer is _EuropeanSpec.is_payer
+    assert tree_spec.model_time_day_count is None
+
+    dual_leg_tree_spec = build_swaption_tree_spec(_DualLegEuropeanCurveSpec())
+
+    assert (
+        dual_leg_tree_spec.model_time_day_count
+        == DayCountConvention.THIRTY_360
+    )
 
 
 def test_price_swaption_tree_is_positive():
     price = price_swaption_tree(_market_state(), _EuropeanSpec(), model="hull_white")
+    assert price > 0.0
+
+
+def test_price_swaption_tree_executes_with_explicit_shared_model_clock():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.0425, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+    )
+
+    price = price_swaption_tree(
+        market_state,
+        _DualLegEuropeanCurveSpec(),
+        model="hull_white",
+        mean_reversion=0.05,
+        sigma=0.01,
+        n_steps=120,
+    )
+
     assert price > 0.0
 
 
@@ -267,6 +485,157 @@ def test_swaption_monte_carlo_problem_starts_payment_schedule_at_explicit_swap_s
             _DelayedStartSpec.day_count,
         )
     )
+
+
+def test_swaption_monte_carlo_payload_exposes_and_uses_separate_floating_timeline():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.0425, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+    )
+    spec = _DualLegEuropeanCurveSpec()
+    problem = resolve_swaption_monte_carlo_problem(
+        market_state,
+        spec,
+        n_steps=64,
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+    settlement_event = next(
+        event
+        for event in problem.event_timeline.events
+        if event.name == "swaption_settlement"
+    )
+    payload = settlement_event.payload
+    fixed_timeline = _payment_timeline_with_model_times(
+        start=spec.swap_start,
+        end=spec.swap_end,
+        frequency=spec.swap_frequency,
+        accrual_day_count=spec.day_count,
+        model_time_day_count=spec.model_time_day_count,
+    )
+    floating_timeline = _payment_timeline_with_model_times(
+        start=spec.swap_start,
+        end=spec.swap_end,
+        frequency=spec.float_frequency,
+        accrual_day_count=spec.float_day_count,
+        model_time_day_count=spec.model_time_day_count,
+    )
+
+    assert payload["payment_times"] == pytest.approx(
+        tuple(float(period.t_payment) for period in fixed_timeline)
+    )
+    assert payload["accrual_fractions"] == pytest.approx(
+        tuple(float(period.accrual_fraction) for period in fixed_timeline)
+    )
+    assert payload["floating_start_times"] == pytest.approx(
+        tuple(float(period.t_start) for period in floating_timeline)
+    )
+    assert payload["floating_end_times"] == pytest.approx(
+        tuple(float(period.t_end) for period in floating_timeline)
+    )
+    assert payload["floating_payment_times"] == pytest.approx(
+        tuple(float(period.t_payment) for period in floating_timeline)
+    )
+    assert payload["floating_accrual_fractions"] == pytest.approx(
+        tuple(float(period.accrual_fraction) for period in floating_timeline)
+    )
+    assert len(payload["payment_times"]) == 10
+    assert len(payload["floating_payment_times"]) == 20
+
+    discount_to_expiry = float(market_state.discount.discount(1.0))
+    fixed_annuity = sum(
+        float(period.accrual_fraction)
+        * float(market_state.discount.discount(float(period.t_payment)))
+        / discount_to_expiry
+        for period in fixed_timeline
+    )
+    forecast_curve = market_state.forecast_curves[spec.rate_index]
+    floating_leg = sum(
+        (
+            float(forecast_curve.discount(float(period.t_start)))
+            / float(forecast_curve.discount(float(period.t_end)))
+            - 1.0
+        )
+        * float(market_state.discount.discount(float(period.t_payment)))
+        / discount_to_expiry
+        for period in floating_timeline
+    )
+    discount_par_rate = (
+        1.0
+        - float(market_state.discount.discount(float(fixed_timeline[-1].t_payment)))
+        / discount_to_expiry
+    ) / fixed_annuity
+    expected_curve_basis = floating_leg / fixed_annuity - discount_par_rate
+
+    assert payload["curve_basis_spread"] == pytest.approx(
+        expected_curve_basis,
+        rel=1e-13,
+        abs=1e-13,
+    )
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_swaption_monte_carlo_defaults_missing_start_to_expiry(explicit_none):
+    spec_fields = {
+        field: getattr(_DualLegEuropeanCurveSpec, field)
+        for field in (
+            "notional", "strike", "expiry_date", "swap_end", "swap_frequency",
+            "day_count", "float_frequency", "float_day_count",
+            "model_time_day_count", "rate_index", "is_payer",
+        )
+    }
+    if explicit_none:
+        spec_fields["swap_start"] = None
+    spec = SimpleNamespace(**spec_fields)
+
+    problem = resolve_swaption_monte_carlo_problem(
+        _market_state(), spec, mean_reversion=0.05, sigma=0.01
+    )
+    settlement = next(
+        event for event in problem.event_timeline.events
+        if event.name == "swaption_settlement"
+    )
+
+    assert settlement.payload["exercise_time"] == pytest.approx(1.0)
+    assert len(settlement.payload["payment_times"]) == 10
+    assert settlement.payload["payment_times"][0] == pytest.approx(1.5)
+    assert len(settlement.payload["floating_payment_times"]) == 20
+    assert settlement.payload["floating_start_times"][0] == pytest.approx(1.0)
+    assert settlement.payload["floating_payment_times"][0] == pytest.approx(1.25)
+    assert settlement.payload["floating_accrual_fractions"][0] == pytest.approx(92 / 360)
+
+
+def test_dual_leg_swaption_monte_carlo_is_exactly_repeatable_for_fixed_seed():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.0425, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+    )
+    controls = {
+        "n_paths": 2_048,
+        "n_steps": 64,
+        "seed": 42,
+        "mean_reversion": 0.05,
+        "sigma": 0.01,
+    }
+
+    first = price_swaption_monte_carlo(
+        market_state,
+        _DualLegEuropeanCurveSpec(),
+        **controls,
+    )
+    second = price_swaption_monte_carlo(
+        market_state,
+        _DualLegEuropeanCurveSpec(),
+        **controls,
+    )
+
+    assert first == second
 
 
 def test_price_swaption_black76_with_hull_white_comparison_vol_matches_tree_and_mc():

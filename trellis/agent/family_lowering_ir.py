@@ -1707,14 +1707,21 @@ def _build_event_program(
             )
 
     for obligation in getattr(product, "obligations", ()) or ():
-        for event_date in _timeline_dates_for_role(product, "settlement_dates"):
+        is_valuation = getattr(obligation, "settlement_kind", "") == "valuation"
+        if is_valuation and getattr(obligation, "settle_date_rule", "") != "exercise_date":
+            raise ValueError("Valuation-only obligation lowering requires the exercise_date rule.")
+        # A value determined at exercise is not a contractual settlement event.
+        schedule_role = "decision_dates" if is_valuation else "settlement_dates"
+        event_kind = "valuation" if is_valuation else "settlement"
+        phase = (control_program.decision_phase or "decision") if is_valuation else "settlement"
+        for event_date in _timeline_dates_for_role(product, schedule_role):
             add_event(
                 event_date,
                 SemanticEventSpec(
                     event_name=str(getattr(obligation, "obligation_id", "") or "settlement"),
-                    event_kind="settlement",
-                    schedule_role="settlement_dates",
-                    phase="settlement",
+                    event_kind=event_kind,
+                    schedule_role=schedule_role,
+                    phase=phase,
                     value_semantics=str(
                         getattr(obligation, "amount_expression", "")
                         or getattr(obligation, "obligation_id", "")
@@ -3123,6 +3130,8 @@ def _typed_settlement_rules(product) -> tuple[str, ...]:
     """Return typed settlement rules emitted by obligations, deduplicated in order."""
     rules: list[str] = []
     for obligation in getattr(product, "obligations", ()) or ():
+        if getattr(obligation, "settlement_kind", "") == "valuation":
+            continue
         rule = str(getattr(obligation, "settle_date_rule", "")).strip()
         if rule and rule not in rules:
             rules.append(rule)

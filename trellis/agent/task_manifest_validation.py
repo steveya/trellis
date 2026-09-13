@@ -1572,6 +1572,16 @@ def _validate_legacy_task(
             )
         )
 
+    if task_id == "T73":
+        issues.extend(
+            _validate_legacy_swaption_comparison_contract(
+                manifest_name,
+                task,
+                path,
+                root=root,
+            )
+        )
+
     if disposition == "expected_honest_block":
         issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
         return issues
@@ -1643,6 +1653,244 @@ def _validate_legacy_task(
             )
         )
     return issues
+
+
+def _validate_legacy_swaption_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+    *,
+    root: Path | None = None,
+) -> list[TaskManifestIssue]:
+    """Keep T73 on its exact authored European swaption proof contract."""
+    contract = task.get("benchmark_contract")
+    cross_validate = task.get("cross_validate")
+    contract = contract if isinstance(contract, Mapping) else {}
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+
+    expected_contract = {
+        "product": "swaption",
+        "style": "european",
+        "payer_receiver": "payer",
+        "exercise_value_convention": "positive_payer_underlying_swap_npv",
+        "currency": "USD",
+        "notional": 1_000_000.0,
+        "settle_date": "2024-11-15",
+        "exercise_date": "2025-11-15",
+        "swap_start_date": "2025-11-15",
+        "maturity_date": "2030-11-15",
+        "fixed_coupon": 0.03,
+        "fixed_coupon_unit": "decimal_annual_rate",
+        "fixed_frequency": "semi_annual",
+        "fixed_day_count": "30/360",
+        "float_frequency": "quarterly",
+        "float_day_count": "ACT/360",
+        "model_time_day_count": "30/360",
+        "rate_index": "USD-SOFR-3M",
+        "discount_curve_id": "usd_ois",
+        "forecast_curve_id": "USD-SOFR-3M",
+        "black_vol_surface_id": "usd_rates_smile",
+        "comparison_model_name": "hull_white_1f",
+        "comparison_model_parameter_set": "t73_hull_white_1f",
+        "comparison_mean_reversion": 0.05,
+        "comparison_sigma": 0.01,
+        "comparison_sigma_unit": "absolute_decimal_rate",
+        "comparison_quote_family": "implied_vol",
+        "comparison_quote_convention": "black",
+        "comparison_quote_subject": "swaption",
+        "valuation_measure": "holder_present_value",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+        "tolerance_unit": "percent_of_reference_price",
+    }
+    common_target = {
+        "payoff_family": "swaption",
+        "exercise_style": "european",
+        "model_family": "interest_rate",
+        "underlying_asset_class": "rate",
+        "observation_style": "fixed_schedule",
+    }
+    expected_targets = {
+        "black76": {
+            "method": "analytical",
+            "route_id": "analytical_black76",
+            "route_family": "analytical",
+            "backend_binding_id": (
+                "trellis.models.rate_style_swaption.price_swaption_black76_raw"
+            ),
+            "variant_parameters": {
+                "pricing_model": "black76",
+                "model_parameter_set": "t73_hull_white_1f",
+                "mean_reversion": 0.05,
+                "sigma": 0.01,
+                "quote_family": "implied_vol",
+                "quote_convention": "black",
+                "quote_subject": "swaption",
+            },
+            "validation_bundle_id": "analytical:swaption",
+            **common_target,
+        },
+        "hw_tree": {
+            "method": "rate_tree",
+            "route_id": "rate_tree_backward_induction",
+            "route_family": "rate_lattice",
+            "backend_binding_id": "trellis.models.trees.algebra.price_on_lattice",
+            "variant_parameters": {
+                "pricing_model": "hull_white_1f",
+                "model_parameter_set": "t73_hull_white_1f",
+                "mean_reversion": 0.05,
+                "sigma": 0.01,
+            },
+            "spec_overrides": {"tree_steps": 120},
+            "validation_bundle_id": "rate_tree:swaption",
+            **common_target,
+        },
+        "hw_mc": {
+            "method": "monte_carlo",
+            "route_id": "monte_carlo_paths",
+            "route_family": "monte_carlo",
+            "backend_binding_id": (
+                "trellis.models.monte_carlo.event_aware."
+                "price_event_aware_monte_carlo"
+            ),
+            "variant_parameters": {
+                "process": "hull_white_1f",
+                "model_parameter_set": "t73_hull_white_1f",
+                "mean_reversion": 0.05,
+                "sigma": 0.01,
+                "sampling": "pseudo_random",
+            },
+            "spec_overrides": {"n_paths": 20_000, "n_steps": 64, "seed": 42},
+            "validation_bundle_id": "monte_carlo:swaption",
+            **common_target,
+        },
+    }
+    expected_cross_validate = {
+        "internal": ["black76", "hw_tree", "hw_mc"],
+        "reference_target": "hw_tree",
+        "relations": {
+            "black76": "within_tolerance",
+            "hw_mc": "within_tolerance",
+        },
+        "target_tolerances_pct": {"black76": 0.1, "hw_mc": 3.0},
+        "tolerance_unit": "percent_of_reference_price",
+        "output_unit": "currency_amount",
+        "output_currency": "USD",
+        "target_contracts": expected_targets,
+    }
+
+    repository_root = root or Path(__file__).resolve().parents[2]
+    scenario_valid = False
+    canonical_market_matches = task.get("market") is None
+    try:
+        from trellis.agent.market_scenarios import load_market_scenario_contracts
+
+        scenario = load_market_scenario_contracts(root=repository_root).get(
+            "usd_european_swaption_proof"
+        )
+        scenario_valid = bool(
+            scenario is not None
+            and scenario.source == "mock"
+            and scenario.as_of.isoformat() == "2024-11-15"
+            and scenario.valuation_date is not None
+            and scenario.valuation_date.isoformat() == "2024-11-15"
+            and scenario.constructor_kind == "flat_rates"
+            and scenario.domestic_rate == 0.04
+            and scenario.forecast_rate == 0.0425
+            and scenario.forecast_curve_name == "USD-SOFR-3M"
+            and scenario.black_vol == 0.2
+            and dict(scenario.selected_components)
+            == {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+                "vol_surface": "usd_rates_smile",
+            }
+            and _manifest_value_matches(
+                scenario.model_parameter_sets,
+                {
+                    "t73_hull_white_1f": {
+                        "parameter_set_name": "t73_hull_white_1f",
+                        "model_family": "hull_white",
+                        "mean_reversion": 0.05,
+                        "sigma": 0.01,
+                        "sigma_unit": "absolute_decimal_rate",
+                        "source_kind": "explicit_proof_fixture",
+                    }
+                },
+            )
+        )
+        market = task.get("market")
+        if scenario is not None and isinstance(market, Mapping):
+            expected_market = {
+                "source": scenario.source,
+                "as_of": scenario.as_of.isoformat(),
+                **dict(scenario.selected_components),
+                "scenario_contract": scenario.to_payload(),
+                "scenario_digest": scenario.scenario_digest,
+                "scenario_schema_version": scenario.schema_version,
+                "scenario_constructor_kind": scenario.constructor_kind,
+            }
+            benchmark_inputs = scenario.financepy_inputs()
+            if benchmark_inputs:
+                expected_market["benchmark_inputs"] = benchmark_inputs
+            canonical_market_matches = _manifest_value_matches(
+                dict(market),
+                expected_market,
+            )
+    except (OSError, ValueError, yaml.YAMLError):
+        scenario_valid = False
+        canonical_market_matches = False
+
+    construct = task.get("construct")
+    valid = all(
+        (
+            _text(task.get("task_disposition")) == "executable_pricing",
+            _text(task.get("description"))
+            == (
+                "Price the authored USD payer European swaption exercise-value proof with "
+                "Black76, a Hull-White tree, and seeded Hull-White Monte Carlo. "
+                "Report holder present value in USD and compare Black76 and Monte "
+                "Carlo with the Hull-White tree under their authored target tolerances."
+            ),
+            _text(task.get("instrument_type")) == "swaption",
+            _text(task.get("market_scenario_id"))
+            == "usd_european_swaption_proof",
+            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            construct == ["analytical", "lattice", "monte_carlo"],
+            task.get("new_component") is None,
+            "comparison_regime" not in task,
+            not any(
+                field in task
+                for field in (
+                    "expected_outcome",
+                    "expected_blocker_ids",
+                    "honest_block_contract",
+                    "seed",
+                    "simulation_seed",
+                )
+            ),
+            scenario_valid,
+            canonical_market_matches,
+            set(contract) == set(expected_contract),
+            _manifest_value_matches(contract, expected_contract),
+            set(cross_validate) == set(expected_cross_validate),
+            set(targets) == set(expected_targets),
+            _manifest_value_matches(cross_validate, expected_cross_validate),
+        )
+    )
+    if valid:
+        return []
+    return [
+        _issue(
+            manifest_name,
+            "legacy.swaption_invalid_contract",
+            "T73 requires the exact authored European swaption comparison contract",
+            task_id="T73",
+            path=path,
+        )
+    ]
 
 
 def _validate_legacy_callable_bond_comparison_contract(
@@ -2440,6 +2688,40 @@ def _has_percentage_tolerance(value: Any) -> bool:
     return _finite_non_negative_number(tolerance)
 
 
+def _has_target_percentage_tolerances(task: Mapping[str, Any]) -> bool:
+    value = task.get("cross_validate")
+    if not isinstance(value, Mapping):
+        return False
+    tolerances = value.get("target_tolerances_pct")
+    if not isinstance(tolerances, Mapping) or not all(
+        _text(target_id) and _finite_non_negative_number(tolerance)
+        for target_id, tolerance in tolerances.items()
+    ):
+        return False
+    if "tolerance_pct" in value and not _has_percentage_tolerance(value):
+        return False
+    construct = task.get("construct")
+    if construct is not None and not (
+        isinstance(construct, str)
+        or (
+            isinstance(construct, Sequence)
+            and not isinstance(construct, bytes)
+            and all(isinstance(method, str) for method in construct)
+        )
+    ):
+        return False
+    # Reuse execution's deterministic target/reference resolution, including
+    # analytical references and construct-only comparisons. A policy label
+    # cannot waive an explicitly malformed or incomplete tolerance map.
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    try:
+        plan = build_comparison_harness_plan(task)
+    except (TypeError, ValueError):
+        return False
+    return bool(plan.targets)
+
+
 def _has_absolute_relative_tolerance(value: Any) -> bool:
     if not isinstance(value, Mapping):
         return False
@@ -2450,10 +2732,18 @@ def _has_absolute_relative_tolerance(value: Any) -> bool:
 
 
 def _has_acceptance_contract(task: Mapping[str, Any]) -> bool:
+    cross_validate = task.get("cross_validate")
+    has_target_tolerances = (
+        isinstance(cross_validate, Mapping)
+        and "target_tolerances_pct" in cross_validate
+    )
+    if has_target_tolerances and not _has_target_percentage_tolerances(task):
+        return False
     if _text(task.get("validation_policy")):
         return True
-    cross_validate = task.get("cross_validate")
-    if _has_percentage_tolerance(cross_validate):
+    if _has_percentage_tolerance(cross_validate) or (
+        has_target_tolerances and bool(cross_validate["target_tolerances_pct"])
+    ):
         return True
     if isinstance(cross_validate, Mapping):
         tolerance = cross_validate.get("tolerance")

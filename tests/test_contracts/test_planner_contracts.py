@@ -143,7 +143,7 @@ class TestT49PlannerSpec:
 # ---------------------------------------------------------------------------
 
 class TestT73PlannerSpec:
-    """T73: Swaption must have vol and expiry fields."""
+    """T73: Swaption must carry both leg conventions and numerical controls."""
 
     @pytest.mark.tier2
     def test_swaption_spec_exists(self):
@@ -159,6 +159,33 @@ class TestT73PlannerSpec:
                     for name in field_names), (
             f"Swaption should have expiry-related fields, got: {field_names}"
         )
+
+    @pytest.mark.tier2
+    def test_swaption_carries_dual_leg_conventions_and_exact_controls(self):
+        spec = _get_static_spec("swaption")
+        assert spec is not None
+        fields = {field.name: field for field in spec.fields}
+
+        assert {
+            "swap_frequency",
+            "day_count",
+            "float_frequency",
+            "float_day_count",
+            "model_time_day_count",
+            "tree_steps",
+            "n_paths",
+            "n_steps",
+            "seed",
+        }.issubset(fields)
+        assert fields["swap_frequency"].default == "Frequency.SEMI_ANNUAL"
+        assert fields["day_count"].default == "DayCountConvention.ACT_360"
+        assert fields["float_frequency"].default == "None"
+        assert fields["float_day_count"].default == "None"
+        assert fields["model_time_day_count"].default == "None"
+        assert fields["tree_steps"].default == "None"
+        assert fields["n_paths"].default == "20000"
+        assert fields["n_steps"].default == "64"
+        assert fields["seed"].default == "42"
 
 
 # ---------------------------------------------------------------------------

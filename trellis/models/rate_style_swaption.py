@@ -7,11 +7,15 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from trellis.core.date_utils import build_payment_timeline, normalize_explicit_dates, year_fraction
+from trellis.core.date_utils import normalize_explicit_dates, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
-from trellis.models.calibration.rates import swaption_terms
+from trellis.models.calibration.rates import (
+    _uses_explicit_swaption_leg_conventions,
+    build_swaption_leg_timelines,
+    swaption_terms,
+)
 from trellis.models.monte_carlo.event_aware import (
     EventAwareMonteCarloProblem,
     EventAwareMonteCarloProblemSpec,
@@ -25,7 +29,12 @@ from trellis.models.monte_carlo.event_aware import (
 
 
 class RateStyleSwaptionSpecLike(Protocol):
-    """Protocol for rate-style swaption specs consumed by analytical helpers."""
+    """Protocol for rate-style swaption specs consumed by analytical helpers.
+
+    Specs may add ``float_frequency``, ``float_day_count``, and
+    ``model_time_day_count`` for the bounded dual-leg path. Their absence
+    preserves the legacy single-timeline interpretation.
+    """
 
     notional: float
     strike: float
@@ -77,6 +86,9 @@ class _EuropeanSwaptionView:
     day_count: DayCountConvention
     rate_index: str | None
     is_payer: bool
+    float_frequency: Frequency | None = None
+    float_day_count: DayCountConvention | None = None
+    model_time_day_count: DayCountConvention | None = None
 
 
 def _normalized_exercise_dates(raw: str | Iterable[date | str]) -> tuple[date, ...]:
@@ -106,6 +118,28 @@ def _resolve_expiry_date(
     raise ValueError("Rate-style swaption helper could not resolve an expiry date.")
 
 
+def _european_swaption_view(
+    spec: RateStyleSwaptionSpecLike,
+    *,
+    expiry_date: date,
+) -> _EuropeanSwaptionView:
+    """Preserve leg conventions and the compatibility start-at-expiry default."""
+    return _EuropeanSwaptionView(
+        notional=float(spec.notional),
+        strike=float(spec.strike),
+        expiry_date=expiry_date,
+        swap_start=getattr(spec, "swap_start", None) or expiry_date,
+        swap_end=spec.swap_end,
+        swap_frequency=spec.swap_frequency,
+        day_count=spec.day_count,
+        rate_index=spec.rate_index,
+        is_payer=bool(spec.is_payer),
+        float_frequency=getattr(spec, "float_frequency", None),
+        float_day_count=getattr(spec, "float_day_count", None),
+        model_time_day_count=getattr(spec, "model_time_day_count", None),
+    )
+
+
 def resolve_swaption_black76_inputs(
     market_state: MarketState,
     spec: RateStyleSwaptionSpecLike,
@@ -121,17 +155,7 @@ def resolve_swaption_black76_inputs(
         raise ValueError("Rate-style swaption Black76 pricing requires market_state.vol_surface")
 
     expiry = _resolve_expiry_date(spec, expiry_date=expiry_date)
-    european_spec = _EuropeanSwaptionView(
-        notional=float(spec.notional),
-        strike=float(spec.strike),
-        expiry_date=expiry,
-        swap_start=getattr(spec, "swap_start", None) or expiry,
-        swap_end=spec.swap_end,
-        swap_frequency=spec.swap_frequency,
-        day_count=spec.day_count,
-        rate_index=spec.rate_index,
-        is_payer=bool(spec.is_payer),
-    )
+    european_spec = _european_swaption_view(spec, expiry_date=expiry)
     expiry_years, annuity, forward_swap_rate, payment_count = swaption_terms(
         european_spec,
         market_state,
@@ -214,23 +238,31 @@ def resolve_swaption_curve_basis_spread(
         raise ValueError("Rate-style swaption basis resolution requires market_state.discount")
 
     settlement = getattr(market_state, "settlement", None) or market_state.as_of
+    fixed_timeline, floating_timeline, model_time_day_count = build_swaption_leg_timelines(
+        spec,
+        market_state,
+    )
     payment_timeline = tuple(
         period
-        for period in build_payment_timeline(
-            spec.swap_start,
-            spec.swap_end,
-            spec.swap_frequency,
-            day_count=spec.day_count,
-            time_origin=settlement,
-            label="rate_style_swaption_curve_basis",
-        )
+        for period in fixed_timeline
+        if period.end_date > settlement
+    )
+    floating_payment_timeline = tuple(
+        period
+        for period in floating_timeline
         if period.end_date > settlement
     )
     if not payment_timeline:
         return 0.0
 
     expiry_years = max(
-        float(year_fraction(settlement, _resolve_expiry_date(spec, expiry_date=None), spec.day_count)),
+        float(
+            year_fraction(
+                settlement,
+                _resolve_expiry_date(spec, expiry_date=None),
+                model_time_day_count,
+            )
+        ),
         1e-6,
     )
     forward_curve = None
@@ -244,6 +276,10 @@ def resolve_swaption_curve_basis_spread(
 
     payload = build_discounted_swap_pv_payload(
         payment_timeline=payment_timeline,
+        floating_timeline=(
+            floating_payment_timeline
+            if _uses_explicit_swaption_leg_conventions(spec) else None
+        ),
         discount_curve=market_state.discount,
         forward_curve=forward_curve,
         exercise_time=expiry_years,
@@ -274,8 +310,11 @@ def _resolve_swaption_black76_vol(
     if comparison_params is None:
         tenor_aware = getattr(market_state.vol_surface, "swaption_black_vol", None)
         if callable(tenor_aware):
+            model_time_day_count = (
+                getattr(spec, "model_time_day_count", None) or spec.day_count
+            )
             tenor_years = max(
-                year_fraction(spec.swap_start, spec.swap_end, spec.day_count),
+                year_fraction(spec.swap_start, spec.swap_end, model_time_day_count),
                 1e-8,
             )
             return float(
@@ -367,17 +406,18 @@ def resolve_swaption_monte_carlo_problem(
 
     resolved = resolve_swaption_black76_inputs(market_state, spec)
     settlement = getattr(market_state, "settlement", None) or market_state.as_of
-    swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
+    fixed_timeline, floating_timeline, _ = build_swaption_leg_timelines(
+        _european_swaption_view(spec, expiry_date=resolved.expiry_date),
+        market_state,
+    )
     payment_timeline = tuple(
         period
-        for period in build_payment_timeline(
-            swap_start,
-            spec.swap_end,
-            spec.swap_frequency,
-            day_count=spec.day_count,
-            time_origin=settlement,
-            label="rate_style_swaption_monte_carlo",
-        )
+        for period in fixed_timeline
+        if period.end_date > settlement
+    )
+    floating_payment_timeline = tuple(
+        period
+        for period in floating_timeline
         if period.end_date > settlement
     )
     if not payment_timeline:
@@ -399,6 +439,10 @@ def resolve_swaption_monte_carlo_problem(
 
     settlement_payload = build_discounted_swap_pv_payload(
         payment_timeline=payment_timeline,
+        floating_timeline=(
+            floating_payment_timeline
+            if _uses_explicit_swaption_leg_conventions(spec) else None
+        ),
         discount_curve=market_state.discount,
         forward_curve=forward_curve,
         exercise_time=float(resolved.expiry_years),

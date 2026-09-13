@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from trellis.agent.quant import PricingPlan
 
 
@@ -117,6 +119,75 @@ def test_build_comparison_harness_plan_resolves_targets_and_reference():
         "cos": None,
         "black_scholes": None,
     }
+
+
+@pytest.mark.parametrize(
+    ("acceptance", "global_tolerance", "target_tolerances"),
+    (
+        ({}, 5.0, {}),
+        ({"tolerance_pct": 0.5}, 0.5, {}),
+        ({"target_tolerances_pct": {"hw_mc": 3.0}}, None, {"hw_mc": 3.0}),
+        (
+            {"tolerance_pct": 0.5, "target_tolerances_pct": {"black76": 50.0}},
+            0.5,
+            {"black76": 50.0},
+        ),
+    ),
+)
+def test_comparison_harness_preserves_authored_tolerance_scope(
+    acceptance, global_tolerance, target_tolerances
+):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {
+                "internal": ["black76", "hw_mc"],
+                "reference_target": "black76",
+                **acceptance,
+            },
+        }
+    )
+
+    assert plan.tolerance_pct == global_tolerance
+    assert dict(plan.target_tolerances_pct) == target_tolerances
+    assert plan.to_payload()["tolerance_pct"] == global_tolerance
+
+
+@pytest.mark.parametrize(
+    "acceptance",
+    (
+        {"target_tolerances_pct": {"black76": 50.0}},
+        {"target_tolerances_pct": {}},
+        {"target_tolerances_pct": []},
+        {"target_tolerances_pct": None},
+        {"target_tolerances_pct": {"unknown": 1.0}},
+        {"target_tolerances_pct": {"hw_mc": -1.0}},
+        {"target_tolerances_pct": {"hw_mc": float("inf")}},
+        {"target_tolerances_pct": {"hw_mc": float("nan")}},
+        {"target_tolerances_pct": {"hw_mc": True}},
+        {"tolerance_pct": -1.0},
+        {"tolerance_pct": float("inf")},
+        {"tolerance_pct": float("nan")},
+        {"tolerance_pct": True},
+        {"tolerance_pct": None},
+    ),
+)
+def test_comparison_harness_rejects_incomplete_or_invalid_tolerances(acceptance):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    with pytest.raises(ValueError, match="tolerance"):
+        build_comparison_harness_plan(
+            {
+                "construct": ["analytical", "monte_carlo"],
+                "cross_validate": {
+                    "internal": ["black76", "hw_mc"],
+                    "reference_target": "black76",
+                    **acceptance,
+                },
+            }
+        )
 
 
 def test_build_comparison_harness_plan_marks_internal_reference_target():

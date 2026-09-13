@@ -600,14 +600,35 @@ def _hydrate_spec_schema_defaults_from_semantics(
     spec_name = str(getattr(spec_schema, "spec_name", "") or "")
 
     def _enum_default(prefix: str, raw_value: object | None) -> str | None:
-        if raw_value in {None, ""}:
+        from trellis.core.types import DayCountConvention, Frequency
+
+        if raw_value is None:
             return None
         text = str(raw_value).strip()
         if not text:
             return None
         if text.startswith(f"{prefix}."):
-            return text
-        return f"{prefix}.{text}"
+            text = text[len(prefix) + 1:]
+        normalized = text.lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "Frequency": {
+                "yearly": "ANNUAL",
+                "semiannual": "SEMI_ANNUAL",
+            },
+            "DayCountConvention": {
+                "act/365f": "ACT_365",
+                "act_365f": "ACT_365",
+            },
+        }
+        normalized = aliases.get(prefix, {}).get(normalized, normalized).lower()
+        enum_type = {"Frequency": Frequency, "DayCountConvention": DayCountConvention}[prefix]
+        # __members__ includes aliases omitted by iteration over an Enum.
+        # Emit only a verified attribute name, never raw semantic source text.
+        for name, member in enum_type.__members__.items():
+            value = str(member.value).lower().replace("-", "_").replace(" ", "_")
+            if normalized == name.lower() or normalized == value:
+                return f"{prefix}.{name}"
+        raise ValueError(f"Unsupported {prefix} convention: {raw_value!r}")
 
     overrides: dict[str, str] = {}
     if spec_name in {"SwaptionSpec", "BermudanSwaptionSpec"}:
@@ -628,6 +649,36 @@ def _hydrate_spec_schema_defaults_from_semantics(
         rate_index = term_fields.get("rate_index")
         if rate_index not in {None, ""}:
             overrides["rate_index"] = str(rate_index).strip()
+
+        if spec_name == "SwaptionSpec":
+            float_frequency_default = _enum_default(
+                "Frequency",
+                term_fields.get("float_frequency")
+                or term_fields.get("floating_frequency"),
+            )
+            if float_frequency_default is not None:
+                overrides["float_frequency"] = float_frequency_default
+
+            float_day_count_default = _enum_default(
+                "DayCountConvention",
+                term_fields.get("float_leg_day_count")
+                or term_fields.get("float_day_count")
+                or term_fields.get("floating_day_count"),
+            )
+            if float_day_count_default is not None:
+                overrides["float_day_count"] = float_day_count_default
+
+            model_time_day_count_default = _enum_default(
+                "DayCountConvention",
+                term_fields.get("model_time_day_count"),
+            )
+            if model_time_day_count_default is not None:
+                overrides["model_time_day_count"] = model_time_day_count_default
+
+            for field_name in ("tree_steps", "n_paths", "n_steps", "seed"):
+                value = term_fields.get(field_name)
+                if value not in {None, ""}:
+                    overrides[field_name] = str(int(value))
     elif spec_name == "NthToDefaultSpec":
         reference_names = tuple(getattr(product, "constituents", ()) or ())
         basket_weights = tuple(term_fields.get("basket_weights", ()) or ())
@@ -7112,10 +7163,13 @@ def _deterministic_exact_binding_evaluate_body(
                 swap_end=spec.swap_end,
                 swap_frequency=spec.swap_frequency,
                 day_count=spec.day_count,
+                model_time_day_count=spec.model_time_day_count,
                 rate_index=spec.rate_index,
                 is_payer=bool(spec.is_payer),
             )
-            tree_steps = getattr(spec, "tree_steps", getattr(spec, "n_steps", None))
+            tree_steps = None if spec.tree_steps is None else int(spec.tree_steps)
+            if tree_steps is not None and tree_steps <= 0:
+                raise ValueError("Rate-tree swaption tree_steps must be positive")
             resolved = resolve_bermudan_swaption_tree_inputs(
                 market_state,
                 tree_spec,
@@ -8000,7 +8054,14 @@ def _deterministic_exact_binding_evaluate_body(
             )
             settlement = getattr(market_state, "settlement", None) or market_state.as_of
             swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
-            payment_timeline = tuple(
+            explicit_leg_conventions = any(
+                getattr(spec, field, None) is not None
+                for field in ("float_frequency", "float_day_count", "model_time_day_count")
+            )
+            float_frequency = spec.float_frequency or spec.swap_frequency
+            float_day_count = spec.float_day_count or spec.day_count
+            model_time_day_count = spec.model_time_day_count or spec.day_count
+            fixed_payment_timeline = tuple(
                 period
                 for period in build_payment_timeline(
                     swap_start,
@@ -8008,12 +8069,30 @@ def _deterministic_exact_binding_evaluate_body(
                     spec.swap_frequency,
                     day_count=spec.day_count,
                     time_origin=settlement,
-                    label="rate_style_swaption_monte_carlo",
+                    model_time_day_count=model_time_day_count,
+                    label="rate_style_swaption_monte_carlo_fixed_leg",
                 )
                 if period.end_date > settlement
             )
-            if not payment_timeline:
-                raise ValueError("Rate-style swaption Monte Carlo pricing requires future payments after settlement")
+            floating_payment_timeline = tuple(
+                period
+                for period in build_payment_timeline(
+                    swap_start,
+                    spec.swap_end,
+                    float_frequency,
+                    day_count=float_day_count,
+                    time_origin=settlement,
+                    model_time_day_count=model_time_day_count,
+                    label="rate_style_swaption_monte_carlo_floating_leg",
+                )
+                if period.end_date > settlement
+            ) if explicit_leg_conventions else None
+            if not fixed_payment_timeline or (
+                explicit_leg_conventions and not floating_payment_timeline
+            ):
+                raise ValueError(
+                    "Rate-style swaption Monte Carlo pricing requires future fixed and floating payments after settlement"
+                )
 
             process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
                 market_state,
@@ -8028,7 +8107,8 @@ def _deterministic_exact_binding_evaluate_body(
                 forward_curve = getattr(market_state, "forward_curve", None)
 
             settlement_payload = build_discounted_swap_pv_payload(
-                payment_timeline=payment_timeline,
+                payment_timeline=fixed_payment_timeline,
+                floating_timeline=floating_payment_timeline,
                 discount_curve=market_state.discount,
                 forward_curve=forward_curve,
                 exercise_time=float(resolved.expiry_years),
@@ -8039,9 +8119,13 @@ def _deterministic_exact_binding_evaluate_body(
                 is_payer=bool(spec.is_payer),
                 anchor_short_rate=float(initial_state),
             )
-            n_paths = max(int(getattr(spec, "n_paths", 20000)), 2)
-            n_steps = max(int(getattr(spec, "n_steps", 64)), 1)
-            seed = spec.seed if hasattr(spec, "seed") else 42
+            n_paths = int(spec.n_paths)
+            n_steps = int(spec.n_steps)
+            seed = int(spec.seed)
+            if n_paths < 2:
+                raise ValueError("Rate-style swaption Monte Carlo n_paths must be at least 2")
+            if n_steps <= 0:
+                raise ValueError("Rate-style swaption Monte Carlo n_steps must be positive")
             problem = build_event_aware_monte_carlo_problem(
                 EventAwareMonteCarloProblemSpec(
                     process_spec=process_spec,

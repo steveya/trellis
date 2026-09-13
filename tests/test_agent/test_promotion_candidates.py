@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -60,6 +61,7 @@ def _write_candidate(
     deviation: float = 0.2,
     code: str | None = None,
     cycle_report: dict[str, object] | None = None,
+    cross_validation_overrides: dict[str, object] | None = None,
 ) -> Path:
     traces = root / "traces"
     candidate_dir = traces / "promotion_candidates"
@@ -102,7 +104,7 @@ def _write_candidate(
             "passed_targets": [comparison_target] if cross_status == "passed" else [],
             "failed_targets": [] if cross_status == "passed" else [comparison_target],
             "successful_targets": [comparison_target] if cross_status == "passed" else [],
-        },
+        } | (cross_validation_overrides or {}),
         "code_hash": hashlib.sha256(source.strip().encode()).hexdigest()[:12],
         "code": source,
     }, sort_keys=False))
@@ -233,6 +235,101 @@ def test_review_promotion_candidate_rejects_when_cross_validation_did_not_pass(m
     failed = {check["name"] for check in review["checks"] if not check["passed"] and check["blocking"]}
     assert "cross_validation_passed" in failed
     assert "target_within_tolerance" in failed
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "global_tolerance", "approved"),
+    [("strict", None, False), ("lenient", None, True), ("strict", 5.0, False)],
+)
+def test_review_promotion_candidate_uses_its_authored_target_tolerance(
+    monkeypatch, tmp_path, comparison_target, global_tolerance, approved,
+):
+    from trellis.agent.knowledge.promotion import review_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    candidate_path = _write_candidate(
+        knowledge_root,
+        "candidate.yaml",
+        comparison_target=comparison_target,
+        deviation=0.2,
+        cross_validation_overrides={
+            "tolerance_pct": global_tolerance,
+            "target_tolerances_pct": {"strict": 0.1, "lenient": 0.3},
+        },
+    )
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["approved"] is approved
+    check = next(check for check in review["checks"] if check["name"] == "target_within_tolerance")
+    assert check["passed"] is approved
+
+
+def test_review_promotion_candidate_retains_global_tolerance_fallback(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import review_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    candidate_path = _write_candidate(
+        knowledge_root,
+        "candidate.yaml",
+        deviation=0.2,
+        cross_validation_overrides={"target_tolerances_pct": {"other": 0.1}},
+    )
+
+    assert review_promotion_candidate(candidate_path)["approved"] is True
+
+
+@pytest.mark.parametrize(
+    "target_tolerances",
+    [None, [], {"demo": None}, {"demo": True}, {"demo": "bad"},
+     {"demo": -1}, {"demo": float("nan")}, {"demo": float("inf")}],
+)
+def test_review_promotion_candidate_rejects_malformed_target_tolerances(
+    monkeypatch, tmp_path, target_tolerances,
+):
+    from trellis.agent.knowledge.promotion import review_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    candidate_path = _write_candidate(
+        knowledge_root,
+        "candidate.yaml",
+        deviation=0.0,
+        cross_validation_overrides={"target_tolerances_pct": target_tolerances},
+    )
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["approved"] is False
+    check = next(check for check in review["checks"] if check["name"] == "target_within_tolerance")
+    assert check["passed"] is False
+
+
+@pytest.mark.parametrize("global_key_present", [True, False])
+def test_review_promotion_candidate_rejects_missing_target_and_global_tolerance(
+    monkeypatch, tmp_path, global_key_present,
+):
+    from trellis.agent.knowledge.promotion import review_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    candidate_path = _write_candidate(
+        knowledge_root,
+        "candidate.yaml",
+        deviation=0.0,
+        cross_validation_overrides={
+            "tolerance_pct": None,
+            "target_tolerances_pct": {"other": 0.1},
+        },
+    )
+    if not global_key_present:
+        candidate = yaml.safe_load(candidate_path.read_text())
+        candidate["cross_validation"].pop("tolerance_pct")
+        candidate_path.write_text(yaml.safe_dump(candidate))
+
+    assert review_promotion_candidate(candidate_path)["approved"] is False
 
 
 def test_review_promotion_candidate_rejects_non_fresh_module_path(monkeypatch, tmp_path):

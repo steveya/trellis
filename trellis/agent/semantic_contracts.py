@@ -3389,6 +3389,45 @@ def make_range_accrual_contract(
     )
 
 
+_SWAPTION_EXERCISE_VALUE_CONVENTION = "positive_payer_underlying_swap_npv"
+_SWAPTION_EXERCISE_VALUE_TRANSITIONS = (
+    "price_swaption_at_exercise", "value_at_exercise"
+)
+
+
+def _swaption_exercise_value_term_errors(
+    term_fields: Mapping[str, object],
+    *,
+    exercise_style: str,
+    observation_schedule: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Check the bounded exercise-value identity without assuming settlement."""
+    errors: list[str] = []
+    if term_fields.get("exercise_value_convention") != _SWAPTION_EXERCISE_VALUE_CONVENTION:
+        errors.append(
+            "Swaption exercise-value mode requires exercise_value_convention "
+            f"`{_SWAPTION_EXERCISE_VALUE_CONVENTION}`."
+        )
+    if exercise_style != "european" or len(observation_schedule) != 1:
+        errors.append(
+            "Swaption exercise-value mode requires exactly one European exercise date."
+        )
+    if term_fields.get("payer_receiver") != "payer" or (
+        "is_payer" in term_fields and term_fields["is_payer"] is not True
+    ):
+        errors.append("Swaption exercise-value mode requires explicit payer direction.")
+    settlement_fields = sorted(
+        str(key) for key in term_fields if "settlement" in str(key).lower()
+    )
+    if settlement_fields:
+        errors.append(
+            "Swaption exercise-value mode cannot declare contractual settlement fields: "
+            + ", ".join(settlement_fields)
+            + "."
+        )
+    return tuple(errors)
+
+
 def make_rate_style_swaption_contract(
     *,
     description: str,
@@ -3397,7 +3436,7 @@ def make_rate_style_swaption_contract(
     exercise_style: str = "european",
     term_fields: Mapping[str, object] | None = None,
 ) -> SemanticContract:
-    """Construct a generic rate-style swaption semantic contract."""
+    """Construct legacy swaption or explicitly bounded exercise-value semantics."""
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
         raise ValueError("Rate-style swaption contract requires an exercise schedule.")
@@ -3410,6 +3449,23 @@ def make_rate_style_swaption_contract(
         exercise_style=normalized_exercise,
     )
     normalized_term_fields = _freeze_mapping(term_fields)
+    exercise_value_only = "exercise_value_convention" in normalized_term_fields
+    if exercise_value_only:
+        mode_errors = _swaption_exercise_value_term_errors(
+            normalized_term_fields,
+            exercise_style=normalized_exercise,
+            observation_schedule=schedule,
+        )
+        if mode_errors:
+            raise ValueError(" ".join(mode_errors))
+    settlement_rule = (
+        "exercise_value_only" if exercise_value_only else "cash_settle_at_exercise"
+    )
+    event_transitions = (
+        _SWAPTION_EXERCISE_VALUE_TRANSITIONS
+        if exercise_value_only
+        else ("price_swaption_at_exercise", "settle_at_exercise")
+    )
 
     product = SemanticProductSemantics(
         semantic_id="rate_style_swaption",
@@ -3420,12 +3476,12 @@ def make_rate_style_swaption_contract(
         timeline=_default_semantic_timeline(
             schedule,
             includes_decision=True,
-            settlement_dates=schedule,
+            settlement_dates=() if exercise_value_only else schedule,
             state_update_dates=schedule,
         ),
         underlier_structure="single_curve_rate_style",
         payoff_rule="swaption_exercise_payoff",
-        settlement_rule="cash_settle_at_exercise",
+        settlement_rule=settlement_rule,
         payoff_traits=("floating_coupons", "vol_surface_dependence"),
         observables=(
             ObservableSpec(
@@ -3439,7 +3495,11 @@ def make_rate_style_swaption_contract(
             ObservableSpec(
                 observable_id="discount_curve_state",
                 observable_type="discount_curve",
-                description="Discount curve state used to settle the exercised swaption.",
+                description=(
+                    "Discount curve state used to value the underlying swap at exercise."
+                    if exercise_value_only
+                    else "Discount curve state used to settle the exercised swaption."
+                ),
                 source="discount_curve",
                 schedule_role="observation_dates",
                 availability_phase="observation",
@@ -3463,10 +3523,17 @@ def make_rate_style_swaption_contract(
         ),
         obligations=(
             ObligationSpec(
-                obligation_id="exercise_cash_settlement",
-                settle_date_rule="cash_settle_at_exercise",
-                amount_expression="swaption_exercise_payoff",
-                settlement_kind="cash",
+                obligation_id=(
+                    "exercise_value" if exercise_value_only else "exercise_cash_settlement"
+                ),
+                settle_date_rule=(
+                    "exercise_date" if exercise_value_only else "cash_settle_at_exercise"
+                ),
+                amount_expression=(
+                    _SWAPTION_EXERCISE_VALUE_CONVENTION
+                    if exercise_value_only else "swaption_exercise_payoff"
+                ),
+                settlement_kind="valuation" if exercise_value_only else "cash",
                 trigger="holder_exercises_swaption",
                 provenance="semantic_contract",
             ),
@@ -3497,13 +3564,13 @@ def make_rate_style_swaption_contract(
         selection_count=0,
         lock_rule="",
         aggregation_rule="",
-        maturity_settlement_rule="cash_settle_at_exercise",
+        maturity_settlement_rule=settlement_rule,
         constituents=(),
         state_variables=("exercise_date", "swap_rate"),
-        event_transitions=("price_swaption_at_exercise", "settle_at_exercise"),
+        event_transitions=event_transitions,
         term_fields=normalized_term_fields,
         event_machine=_derive_event_machine(
-            ("price_swaption_at_exercise", "settle_at_exercise"),
+            event_transitions,
             state_dependence="schedule_dependent",
         ),
     )
@@ -6029,13 +6096,13 @@ def _default_semantic_timeline(
     schedule: tuple[str, ...] | list[str],
     *,
     includes_decision: bool = False,
-    settlement_dates: tuple[str, ...] | list[str] = (),
+    settlement_dates: tuple[str, ...] | list[str] | None = None,
     state_update_dates: tuple[str, ...] | list[str] = (),
 ) -> SemanticTimeline:
-    """Build the default phase-aware timeline used in tranche 1."""
+    """Default omitted settlement to maturity; preserve explicitly empty dates."""
     normalized_schedule = _normalize_schedule(schedule)
     normalized_settlement = _normalize_schedule(
-        settlement_dates or (normalized_schedule[-1:],)
+        normalized_schedule[-1:] if settlement_dates is None else settlement_dates
     ) if normalized_schedule else ()
     normalized_state_updates = _normalize_schedule(state_update_dates)
     return SemanticTimeline(
@@ -6073,6 +6140,55 @@ def _legacy_state_fields(values) -> tuple[StateField, ...]:
     return tuple(fields)
 
 
+def _parse_explicit_event_machine(payload: object) -> object:
+    """Hydrate an explicit machine without deriving or discarding authored fields."""
+    from trellis.agent.event_machine import (
+        EventAction,
+        EventGuard,
+        EventMachine,
+        EventState,
+        EventTransition,
+    )
+
+    sequence_fields = {
+        EventMachine: {"states": EventState, "transitions": EventTransition, "terminal_states": str},
+        EventState: {"state_variables": str},
+        EventGuard: {"parameters": str},
+        EventAction: {"parameters": str},
+    }
+    optional_records = {"guard": EventGuard, "action": EventAction}
+
+    def parse_record(value, record_type):
+        if isinstance(value, record_type):
+            return value
+        if not isinstance(value, Mapping):
+            raise TypeError(f"{record_type.__name__} must be a typed record or mapping")
+        fields = dict(value)
+        for name, item in fields.items():
+            item_type = sequence_fields.get(record_type, {}).get(name)
+            if item_type is not None:
+                if not isinstance(item, (tuple, list)):
+                    raise TypeError(f"{record_type.__name__}.{name} must be a list or tuple")
+                if item_type is str:
+                    if not all(isinstance(entry, str) for entry in item):
+                        raise TypeError(f"{record_type.__name__}.{name} must contain strings")
+                    fields[name] = tuple(item)
+                else:
+                    fields[name] = tuple(parse_record(entry, item_type) for entry in item)
+            elif record_type is EventTransition and name in optional_records:
+                fields[name] = None if item is None else parse_record(item, optional_records[name])
+            elif record_type is EventTransition and name == "priority":
+                if type(item) is not int:
+                    raise TypeError("EventTransition.priority must be an integer")
+            elif not isinstance(item, str):
+                raise TypeError(f"{record_type.__name__}.{name} must be a string")
+        # Constructors reject unknown fields and missing required fields; an
+        # explicit malformed machine must never fall back to derived semantics.
+        return record_type(**fields)
+
+    return parse_record(payload, EventMachine)
+
+
 def _derive_event_machine(
     event_transitions: tuple[str, ...] | list[str],
     *,
@@ -6081,7 +6197,7 @@ def _derive_event_machine(
 ) -> object | None:
     """Derive a typed event machine from legacy transitions when needed."""
     if explicit_machine is not None:
-        return explicit_machine
+        return _parse_explicit_event_machine(explicit_machine)
     transitions = _tuple(event_transitions)
     if not transitions:
         return None

@@ -40,7 +40,7 @@ legacy baseline remains an incompleteness inventory, never permission to price.
 | 10 | `QUA-1247` | In Progress | Six authored pricing/analytics contracts and an exact T82 hold replace seven title-derived bootstraps |
 | 10.1 | `QUA-1255` | Done | T02/T17 receive authored callable pricing fixtures |
 | 10.2 | `QUA-1260` | Done | Date-preserving parallel curve shifts support the authored callable fixture |
-| 10.3 | `QUA-1258` | Backlog | T89 receives an authored same-payoff, constant-zero-OAS duration comparison; prerequisites are Done |
+| 10.3 | `QUA-1258` | In Progress | T89 receives an authored same-payoff, constant-zero-OAS duration comparison; prerequisites are Done |
 | 10.4 | `QUA-1262` | In Progress | T82 receives an exact proof hold listing missing analytics inputs, with zero execution attempts |
 | 10.5 | `QUA-1254` | In Progress | T73 receives an authored payer swap-NPV exercise-value proof, without settlement-lifecycle claims |
 | 10.6 | `QUA-1256` | In Progress | E22 receives an authored cap-strip contract with independent lognormal forward-marginal MC |
@@ -48,8 +48,10 @@ legacy baseline remains an incompleteness inventory, never permission to price.
 | 10.8 | `QUA-1259` | Backlog | Remove obsolete pricing bootstraps; blocked by QUA-1254/1256/1258/1262 |
 | 11 | `QUA-1261` | Backlog | Preserve authored market state in generic OAS solving; separate from T89's zero-OAS identity |
 | 12 | `QUA-1263` | Backlog | Report exercised pricing seeds truthfully for the remaining authored stochastic tasks |
-| 13 | `QUA-1251` | Backlog | Reusable variable-coupon callable-bond primitive; QUA-1248 prerequisite is Done |
-| 14 | `QUA-1252` | Backlog | Remove implicit 5% comparison tolerance after QUA-1247 closes |
+| 13 | `QUA-1264` | Backlog | Shared comparisons reject invalid numeric/status/unit evidence beyond T89's bounded profile |
+| 14 | `QUA-1265` | Backlog | Governed holds cannot bypass admission through removed or spoofed provenance |
+| 15 | `QUA-1251` | Backlog | Reusable variable-coupon callable-bond primitive; QUA-1248 prerequisite is Done |
+| 16 | `QUA-1252` | Backlog | Remove implicit 5% comparison tolerance after QUA-1247 closes |
 
 Linear is the source of truth; table states were reconciled on 2026-09-13.
 Completed upstream tickets may remain in Linear's dependency history and are
@@ -84,6 +86,9 @@ cleanup, and the release gate pass. Its merged-state cleanup/refactoring and
 official quant/developer/user documentation maintenance are required closeout
 work. Generic OAS market-state repair (`QUA-1261`) and remaining seed provenance
 repair (`QUA-1263`) stay independently tracked under `QUA-1241`.
+Review also exposed shared comparison-output validation (`QUA-1264`) and
+mutable-provenance admission (`QUA-1265`) gaps. The bounded T89 output checks
+and T82/T89 reserved-ID guards do not close those general follow-ons.
 
 ## QUA-1242 implementation contract
 

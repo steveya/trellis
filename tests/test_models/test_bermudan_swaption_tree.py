@@ -6,8 +6,11 @@ from datetime import date
 import pytest
 
 from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.bermudan_swaption_tree import (
+    BermudanSwaptionTreeSpec,
+    build_bermudan_swaption_coupon_map,
     build_bermudan_swaption_lattice,
     compile_bermudan_swaption_contract_spec,
     price_bermudan_swaption_on_lattice,
@@ -149,6 +152,49 @@ def test_resolved_bermudan_swaption_tree_inputs_retain_mean_reversion():
     assert resolved.mean_reversion == pytest.approx(0.0375)
     assert resolved.sigma == pytest.approx(0.0125)
     assert resolved.n_steps == 144
+
+
+def test_distinct_model_clock_drives_tree_horizon_exercise_and_coupon_steps():
+    # The legacy tree quantizes to regular schedule periods. Long dated,
+    # regular dates expose clock differences that rounding hides for T73.
+    # This checks timing, not general ACT/360 coupon-amount support.
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=60.0),
+        vol_surface=FlatVol(0.20),
+    )
+    spec = BermudanSwaptionTreeSpec(
+        notional=100.0,
+        strike=0.05,
+        exercise_dates=(date(2064, 11, 15), date(2065, 11, 15)),
+        swap_end=date(2074, 11, 15),
+        swap_frequency=Frequency.SEMI_ANNUAL,
+        day_count=DayCountConvention.ACT_360,
+        model_time_day_count=DayCountConvention.THIRTY_360,
+    )
+    controls = {"mean_reversion": 0.05, "sigma": 0.01, "n_steps": 204}
+
+    resolved = resolve_bermudan_swaption_tree_inputs(market_state, spec, **controls)
+    lattice = build_bermudan_swaption_lattice(market_state, spec, **controls)
+    contract = compile_bermudan_swaption_contract_spec(
+        lattice, spec=spec, settlement=SETTLE
+    )
+    coupons = build_bermudan_swaption_coupon_map(
+        spec,
+        settlement=SETTLE,
+        swap_start=spec.exercise_dates[0],
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+    )
+
+    assert resolved.option_horizon == pytest.approx(41.0)
+    assert resolved.tree_horizon == pytest.approx(51.0)
+    assert lattice.dt == pytest.approx(0.25)
+    assert contract.control.exercise_steps == (160, 164)
+    assert tuple(coupons) == tuple(range(162, 201, 2))
+    assert min(coupons) * lattice.dt == pytest.approx(40.5)
+    assert max(coupons) * lattice.dt == pytest.approx(50.0)
 
 
 def test_bermudan_swaption_lattice_uses_resolved_mean_reversion(monkeypatch):

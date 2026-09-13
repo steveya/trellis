@@ -224,8 +224,9 @@ surface directly:
 
 1. ``resolve_swaption_black76_inputs(...)`` binds the typed expiry and market
    conventions;
-2. ``build_payment_timeline(...)`` starts the underlying swap schedule at the
-   explicit ``swap_start``;
+2. ``build_payment_timeline(...)`` starts the fixed leg at ``swap_start``;
+   explicitly authored floating/model-time conventions add a separate floating
+   timeline while measuring both legs on one model-time day-count clock;
 3. ``resolve_hull_white_monte_carlo_process_inputs(...)`` binds the short-rate
    process;
 4. ``build_discounted_swap_pv_payload(...)`` and
@@ -236,9 +237,33 @@ surface directly:
 6. ``build_event_aware_monte_carlo_problem(...)`` plus
    ``price_event_aware_monte_carlo(...)`` compile and evaluate it.
 
-The adapter retains day count, swap frequency, rate index, path/step/seed
-controls, and any explicitly declared Hull-White comparison parameters. It
-does not substitute an equity GBM process. The product-level
+The adapter retains separate fixed- and floating-leg frequency/day-count
+conventions, the shared model-time day count, rate index, path/step/seed
+controls, and any explicitly declared Hull-White comparison parameters. The
+fixed timeline supplies the annuity while the floating timeline supplies the
+forecast-leg PV; neither leg silently borrows the other's accrual convention.
+Time-based curve forwards are annualized on the model clock, so each projected
+floating coupon amount is the forward times its model-time interval. Equivalently,
+the rate on the floating accrual basis is that amount divided by the floating
+accrual fraction. This preserves the discount-factor ratio and gives zero curve
+basis when the discount and forecast curves coincide, even when the two day
+counts differ.
+
+The low-level ``build_discounted_swap_pv_payload(...)`` retains its historical
+accrual-based forward conversion when ``floating_timeline`` is omitted, for
+compatibility with independently authored ``SchedulePeriod`` inputs. That
+legacy convention can retain a nonzero basis when its accrual fractions and
+model-time intervals differ. Pass ``floating_timeline`` explicitly, even if it
+equals the fixed timeline, to select the consistent model-clock conversion.
+Rate-style helpers and generated adapters select that explicit path when any
+of ``float_frequency``, ``float_day_count``, or ``model_time_day_count`` is
+non-``None``; the T73 proof authors all three. With all three absent, the
+single-schedule forward-times-accrual behavior is retained even for non-additive
+30/360 month-end periods. Explicit conventions also propagate on ordinary
+benchmark requests such as F006, independently of any comparison-model
+parameter set.
+
+It does not substitute an equity GBM process. The product-level
 ``price_swaption_monte_carlo(...)`` and
 ``resolve_swaption_monte_carlo_problem(...)`` APIs remain compatibility and
 independent-reference surfaces, not generated construction authority. The
@@ -997,6 +1022,21 @@ the swaption lattice contract, and calls ``price_on_lattice(...)``. The Monte
 Carlo adapter preserves the same model contract and adds stable
 comparison-quality sampling controls instead of drifting on an unseeded
 default path.
+
+The authored ``T73`` proof is deliberately narrower than general swaption
+pricing. It fixes the positive payer underlying-swap NPV at exercise,
+discounted to valuation, with named USD OIS and
+SOFR-3M curves, separate fixed and floating schedules, one model-time clock, a
+named constant-parameter Hull-White regime, and exact lattice/Monte Carlo
+controls. Its Black76 target is the Black implied-vol normalization of the
+Hull-White tree price, not an independent model oracle; the seeded Monte Carlo
+target is accepted only under its separately authored sampling tolerance.
+The semantic contract records a valuation-only exercise-value obligation.
+No contractual cash/physical settlement convention or delivery lifecycle is
+modeled; in particular, this does not establish par-yield cash-annuity pricing.
+When a comparison authors only per-target tolerances, every non-reference
+target must have an explicit tolerance; the runtime does not infer one from
+another target's allowance.
 
 Within the valuation layer, migrated calibration workflows now carry a bounded
 ``EngineModelSpec`` surface instead of relying only on a free-form

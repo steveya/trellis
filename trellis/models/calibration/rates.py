@@ -20,7 +20,7 @@ from typing import Callable, Literal, Protocol, Sequence
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, price_bermudan_swaption_tree
 from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
+from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 from trellis.instruments.cap import CapFloorSpec
 from trellis.models.black import black76_call, black76_put
 from trellis.models.calibration.solve_request import (
@@ -53,7 +53,13 @@ from trellis.models.hull_white_parameters import (
 
 
 class SwaptionLike(Protocol):
-    """Protocol for the swaption-like inputs used by the calibration helpers."""
+    """Protocol for swaption inputs used by calibration helpers.
+
+    Implementations may additionally provide ``float_frequency``,
+    ``float_day_count``, and ``model_time_day_count``. When absent, the
+    historical single-timeline ``swap_frequency``/``day_count`` behavior is
+    retained.
+    """
 
     notional: float
     strike: float
@@ -914,38 +920,90 @@ def swaption_terms(
     market_state: MarketState,
 ) -> tuple[float, float, float, int]:
     """Return expiry, annuity, forward swap rate, and payment count."""
-    timeline = build_payment_timeline(
+    fixed_timeline, floating_timeline, model_time_day_count = build_swaption_leg_timelines(
+        spec,
+        market_state,
+    )
+    if not fixed_timeline:
+        return 0.0, 0.0, 0.0, 0
+
+    fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
+    annuity = 0.0
+    payment_count = 0
+    for period in fixed_timeline:
+        if period.end_date <= market_state.settlement:
+            continue
+        tau = float(period.accrual_fraction or 0.0)
+        t_payment = float(period.t_payment or 0.0)
+        df = float(market_state.discount.discount(t_payment))
+        annuity += tau * df
+        payment_count += 1
+
+    explicit_leg_conventions = _uses_explicit_swaption_leg_conventions(spec)
+    float_pv = 0.0
+    for period in floating_timeline:
+        if period.end_date <= market_state.settlement:
+            continue
+        t_start = max(float(period.t_start or 0.0), 1e-6)
+        t_end = float(period.t_end or 0.0)
+        t_payment = float(period.t_payment or t_end)
+        df = float(market_state.discount.discount(t_payment))
+        fwd = float(fwd_curve.forward_rate(t_start, t_end))
+        # Legacy single-schedule specs use the authored accrual fraction;
+        # even one 30/360 clock is not additive at month ends. Explicit leg
+        # conventions opt into the model-clock coupon conversion.
+        accrual = (
+            t_end - t_start if explicit_leg_conventions
+            else float(period.accrual_fraction or 0.0)
+        )
+        float_pv += fwd * accrual * df
+
+    expiry = year_fraction(
+        market_state.settlement,
+        spec.expiry_date,
+        model_time_day_count,
+    )
+    swap_rate = float_pv / annuity if annuity > 0.0 else 0.0
+    return float(expiry), float(annuity), float(swap_rate), payment_count
+
+
+def _uses_explicit_swaption_leg_conventions(spec: SwaptionLike) -> bool:
+    """Distinguish authored leg/model conventions from single-schedule callers."""
+    return any(
+        getattr(spec, field, None) is not None
+        for field in ("float_frequency", "float_day_count", "model_time_day_count")
+    )
+
+
+def build_swaption_leg_timelines(
+    spec: SwaptionLike,
+    market_state: MarketState,
+) -> tuple[ContractTimeline, ContractTimeline, DayCountConvention]:
+    """Build fixed and floating schedules on one explicitly shared model clock."""
+    model_time_day_count = (
+        getattr(spec, "model_time_day_count", None) or spec.day_count
+    )
+    float_frequency = getattr(spec, "float_frequency", None) or spec.swap_frequency
+    float_day_count = getattr(spec, "float_day_count", None) or spec.day_count
+    fixed_timeline = build_payment_timeline(
         spec.swap_start,
         spec.swap_end,
         spec.swap_frequency,
         day_count=spec.day_count,
         time_origin=market_state.settlement,
-        label="swaption_underlier_timeline",
+        model_time_day_count=model_time_day_count,
+        label="swaption_fixed_leg_timeline",
     )
-    if not timeline:
-        return 0.0, 0.0, 0.0, 0
-
-    fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
-    annuity = 0.0
-    float_pv = 0.0
-    payment_count = 0
-
-    for period in timeline:
-        if period.end_date <= market_state.settlement:
-            continue
-        tau = float(period.accrual_fraction or 0.0)
-        t_start = float(period.t_start or 0.0)
-        t_end = float(period.t_end or 0.0)
-        t_start = max(t_start, 1e-6)
-        df = float(market_state.discount.discount(t_end))
-        fwd = float(fwd_curve.forward_rate(t_start, t_end))
-        annuity += tau * df
-        float_pv += fwd * tau * df
-        payment_count += 1
-
-    expiry = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-    swap_rate = float_pv / annuity if annuity > 0.0 else 0.0
-    return float(expiry), float(annuity), float(swap_rate), payment_count
+    floating_timeline = build_payment_timeline(
+        spec.swap_start,
+        spec.swap_end,
+        float_frequency,
+        day_count=float_day_count,
+        time_origin=market_state.settlement,
+        model_time_day_count=model_time_day_count,
+        label="swaption_floating_leg_timeline",
+    )
+    return fixed_timeline, floating_timeline, model_time_day_count
 
 
 def _swaption_black76_price(
