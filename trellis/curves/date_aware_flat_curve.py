@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from trellis.conventions.day_count import DayCountConvention
@@ -27,6 +27,14 @@ class DateAwareFlatYieldCurve:
     flat_rate: float
     curve_day_count: DayCountConvention = DayCountConvention.ACT_ACT_ISDA
     max_tenor: float = 31.0
+
+    def shift(self, bps: float) -> DateAwareFlatYieldCurve:
+        """Return a new curve shifted by *bps*, preserving date conventions.
+
+        The continuously compounded flat rate changes by ``bps / 10_000``.
+        The original curve is unchanged, and traced rate values stay traced.
+        """
+        return replace(self, flat_rate=self.flat_rate + bps / 10_000.0)
 
     def zero_rate(self, t: float) -> float:
         """Continuously compounded zero rate at time *t*."""

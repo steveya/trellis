@@ -68,6 +68,32 @@ Legacy lists of ``BootstrapInstrument`` still work, but Trellis now
 normalizes them onto the same typed bundle surface with explicit default
 conventions.
 
+For a flat curve with an explicit valuation date and day count, use
+``DateAwareFlatYieldCurve``. Its ``shift(bps)`` method returns a new curve with
+the continuously compounded rate increased by ``bps / 10_000``; negative and
+zero shifts are also supported. The original curve, valuation date, curve day
+count, and maximum tenor are preserved.
+
+.. code-block:: python
+
+   from datetime import date
+   from trellis.conventions.day_count import DayCountConvention
+   from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
+
+   dated_curve = DateAwareFlatYieldCurve(
+       value_date=date(2025, 1, 15),
+       flat_rate=0.05,
+       curve_day_count=DayCountConvention.ACT_365,
+   )
+   shifted_curve = dated_curve.shift(25.0)  # 5.25%; dated_curve remains at 5%
+   discount = shifted_curve.discount_date(date(2030, 1, 15))
+
+Dated discounting and forwards continue to use the preserved curve convention
+and the caller's separate accrual convention. This is a parallel flat-rate
+shift, not a bucket shock or a quote-driven curve rebuild. Existing callable
+``duration`` and ``oas_duration`` measures can use this curve through
+finite-difference repricing while retaining the market's model parameters.
+
 Data Providers
 --------------
 
